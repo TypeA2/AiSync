@@ -94,5 +94,17 @@ namespace ai_sync {
                 this["LastMode"] = value;
             }
         }
+        
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("8080")]
+        public string VlcPort {
+            get {
+                return ((string)(this["VlcPort"]));
+            }
+            set {
+                this["VlcPort"] = value;
+            }
+        }
     }
 }

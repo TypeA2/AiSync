@@ -89,6 +89,9 @@
             <TextBlock Name="Duration" Margin="0 0 15 0" Text="--:--"/>
         </StackPanel>
         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+            <Button Name="SelectFile" Width="45" Height="45" Margin="25 15" Click="SelectFile_Click" Visibility="Collapsed">
+                <Image x:Name="SelectFileImage"/>
+            </Button>
             <Button Name="PlayPause" Width="45" Height="45" Margin="25 15" Click="PlayPause_Click">
                 <Image Name="PlayPauseImage"/>
             </Button>
@@ -99,6 +102,6 @@
                 <TextBox Name="VolumeText" Width="45" Text="100%" TextAlignment="Center" IsReadOnly="True"/>
             </StackPanel>
         </StackPanel>
-        <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" Text="Status text" Margin="0 5 0 15"/>
+        <TextBlock HorizontalAlignment="Center" VerticalAlignment="Center" Text="No file selected" Margin="0 5 0 15"/>
     </StackPanel>
 </Window>

@@ -9,8 +9,9 @@ namespace ai_sync {
     /// </summary>
 
     public partial class MainWindow : Window {
-        private readonly ImageSource _play_icon = Utils.ExtractIcon("C:\\Windows\\System32\\mmcndmgr.dll", -30529);
-        private readonly ImageSource _pause_icon = Utils.ExtractIcon("C:\\Windows\\System32\\mmcndmgr.dll", -30529);
+        private readonly ImageSource _play_icon  = Utils.ExtractIcon(@"C:\Windows\System32\mmcndmgr.dll", -30529);
+        private readonly ImageSource _pause_icon = Utils.ExtractIcon(@"C:\Windows\System32\mmcndmgr.dll", -30529);
+        private readonly ImageSource _add_icon = Utils.ExtractIcon(@"C:\Windows\System32\mmcndmgr.dll", -30503);
 
         private readonly AiSync ai;
 
@@ -23,14 +24,15 @@ namespace ai_sync {
             InitializeComponent();
 
             PlayPauseImage.Source = _play_icon;
+            SelectFileImage.Source = _add_icon;
         }
 
         public void SetAsClient() {
-
+            SelectFile.Visibility = Visibility.Collapsed;
         }
 
         public void SetAsServer() {
-
+            SelectFile.Visibility = Visibility.Visible;
         }
 
         private void PlaybackStopped(object? sender, EventArgs e) {
@@ -59,5 +61,8 @@ namespace ai_sync {
             
         }
 
+        private void SelectFile_Click(object sender, RoutedEventArgs e) {
+
+        }
     }
 }

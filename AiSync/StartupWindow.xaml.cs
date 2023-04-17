@@ -1,12 +1,7 @@
-﻿using Microsoft.Win32;
-
-using System;
-using System.Diagnostics;
-using System.IO;
+﻿using System;
 using System.Net;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Input;
 using System.Windows.Media;
 
 namespace ai_sync {
@@ -16,6 +11,7 @@ namespace ai_sync {
     public partial class StartupWindow : Window {
         private Brush? ip_brush;
         private Brush? port_brush;
+        private Brush? vlc_port_brush;
 
         public StartupWindow() {
             InitializeComponent();
@@ -33,8 +29,11 @@ namespace ai_sync {
                     HostPort.Text = Settings.Default.ClientPort;
                 }
 
+                VlcIntfPort.Text = Settings.Default.VlcPort;
+
                 ip_brush = HostIP.BorderBrush;
                 port_brush = HostIP.BorderBrush;
+                vlc_port_brush = VlcIntfPort.BorderBrush;
             };
         }
 
@@ -48,9 +47,12 @@ namespace ai_sync {
         public IPAddress IP { get; private set; } = IPAddress.Loopback;
         public ushort Port { get; private set; } = 0;
 
-        private bool ValidateConnection(out bool ip_valid, out bool port_valid) {
+        public ushort VlcPort { get; private set; } = 0;
+
+        private bool ValidateConnection(out bool ip_valid, out bool port_valid, out bool vlc_port_valid) {
             ip_valid = false;
             port_valid = false;
+            vlc_port_valid = false;
 
             if (IPAddress.TryParse(HostIP.Text, out IPAddress? ip)) {
                 IP = ip;
@@ -65,24 +67,22 @@ namespace ai_sync {
                 port_valid = true;
             }
 
-            return ip_valid && port_valid;
+            if (UInt16.TryParse(VlcIntfPort.Text, out ushort vlc_port) && vlc_port > 1024) {
+                VlcPort = vlc_port;
+                vlc_port_valid = true;
+            }
+
+            return ip_valid && port_valid && vlc_port_valid;
         }
 
         private void ButtonClicked(object sender, RoutedEventArgs e) {
             Button btn = (Button)sender;
 
-            if (!ValidateConnection(out bool ip_valid, out bool port_valid)) {
-                if (!ip_valid) {
-                    HostIP.BorderBrush = Brushes.Red;
-                } else {
-                    HostIP.BorderBrush = ip_brush;
-                }
+            if (!ValidateConnection(out bool ip_valid, out bool port_valid, out bool vlc_port_valid)) {
+                HostIP.BorderBrush      = ip_valid       ? ip_brush       : Brushes.Red;
+                HostPort.BorderBrush    = port_valid     ? port_brush     : Brushes.Red;
+                VlcIntfPort.BorderBrush = vlc_port_valid ? vlc_port_brush : Brushes.Red;
 
-                if (!port_valid) {
-                    HostPort.BorderBrush = Brushes.Red;
-                } else {
-                    HostPort.BorderBrush = port_brush;
-                }
                 return;
             }
 
@@ -103,6 +103,8 @@ namespace ai_sync {
 
                 Settings.Default.LastMode = "server";
             }
+
+            Settings.Default.VlcPort = VlcIntfPort.Text;
 
             Settings.Default.Save();
             

@@ -25,6 +25,7 @@
             <Grid.RowDefinitions>
                 <RowDefinition/>
                 <RowDefinition/>
+                <RowDefinition/>
             </Grid.RowDefinitions>
 
             <Grid.ColumnDefinitions>
@@ -38,6 +39,8 @@
             <TextBlock Grid.Row="1" Grid.Column="0" Margin="0 5" Text="Host Port"/>
             <TextBox Name="HostPort" Grid.Row="1" Grid.Column="1" VerticalAlignment="Center"/>
 
+            <TextBlock Grid.Row="2" Grid.Column="0" Margin="0 5" Text="VLC Port"/>
+            <TextBox Name="VlcIntfPort" Grid.Row="2" Grid.Column="1" VerticalAlignment="Center"/>
         </Grid>
 
         <TextBlock Grid.Row="1" Grid.ColumnSpan="2" HorizontalAlignment="Center" VerticalAlignment="Center" Text="Run in Client or Server mode?"/>
