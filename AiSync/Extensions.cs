@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Interop;
 
-namespace ai_sync {
+namespace AiSync {
     public static partial class Extensions {
         /* Because WPF doesn't natively support this */
         private const int GWL_STYLE = -16;

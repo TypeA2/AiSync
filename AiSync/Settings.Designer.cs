@@ -8,7 +8,7 @@
 // </auto-generated>
 //------------------------------------------------------------------------------
 
-namespace ai_sync {
+namespace AiSync {
     
     
     [global::System.Runtime.CompilerServices.CompilerGeneratedAttribute()]

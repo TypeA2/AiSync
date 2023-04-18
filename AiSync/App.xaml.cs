@@ -5,13 +5,13 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 
-namespace ai_sync {
+namespace AiSync {
     /// <summary>
     /// Interaction logic for App.xaml
     /// </summary>
     public partial class App : Application {
         private static bool GetVlcPath() {
-            OpenFileDialog dialog = new OpenFileDialog() {
+            OpenFileDialog dialog = new() {
                 Filter = "Executables (*.exe)|*.exe|All files (*.*)|*.*",
             };
 
@@ -36,40 +36,43 @@ namespace ai_sync {
                 }
             }
 
-            AiSync ai = new(Settings.Default.VlcPath);
-
-            MainWindow main = new(ai);
-
-            main.Closed += (_, _) => {
-                ai.Dispose();
-            };
-
-            main.Show();
-
             /* Retrieve whether we're client or server */
-            StartupWindow startup = new() {
-                Owner = main,
+            StartupWindow startup = new(); ;
+
+            startup.Closing += (_, _) => {
+                Trace.WriteLine($"Running as {startup.RunAs}");
+
+                switch (startup.RunAs) {
+                    case StartupWindow.RunType.None:
+                        break;
+
+                    case StartupWindow.RunType.Client: {
+                        AiClient ai = new(startup.IP, startup.Port, Settings.Default.VlcPath, startup.VlcPort);
+                        ClientWindow window = new(ai);
+
+                        window.Closed += (_, _) => {
+                            ai.Dispose();
+                        };
+
+                        window.Show();
+                        break;
+                    }
+
+                    case StartupWindow.RunType.Server: {
+                        AiServer ai = new(startup.IP, startup.Port, Settings.Default.VlcPath, startup.VlcPort);
+                        ServerWindow window = new(ai);
+
+                        window.Closed += (_, _) => {
+                            ai.Dispose();
+                        };
+
+                        window.Show();
+                        break;
+                    }
+                }
             };
 
-            startup.ShowDialog();
-
-            Trace.WriteLine($"Running as {startup.RunAs}");
-
-            switch (startup.RunAs) {
-                case StartupWindow.RunType.None:
-                    main.Close();
-                    break;
-
-                case StartupWindow.RunType.Client:
-                    ai.StartClient(startup.IP, startup.Port);
-                    main.SetAsClient();
-                    break;
-
-                case StartupWindow.RunType.Server:
-                    ai.StartServer(startup.IP, startup.Port);
-                    main.SetAsServer();
-                    break;
-            }
+            startup.Show();
         }
     }
 }

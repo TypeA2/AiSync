@@ -1,7 +1,7 @@
-﻿<Application x:Class="ai_sync.App"
+﻿<Application x:Class="AiSync.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:local="clr-namespace:ai_sync"
+             xmlns:local="clr-namespace:AiSync"
              Startup="StartApp">
     <Application.Resources>
         <Style x:Key="ButtonFocus">

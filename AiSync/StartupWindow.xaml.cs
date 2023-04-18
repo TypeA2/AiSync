@@ -4,7 +4,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 
-namespace ai_sync {
+namespace AiSync {
     /// <summary>
     /// Interaction logic for StartupWindow.xaml
     /// </summary>
