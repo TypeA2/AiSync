@@ -1,13 +1,30 @@
-﻿using System.Text;
+﻿using System.Numerics;
+using System.Text;
 
 namespace AiSync {
     public static class Utils {
-        public static string FormatTime(long ms, bool show_ms = true, bool always_hours = false) {
+        public static string FormatTime(long ms, bool show_ms = true, bool always_hours = false, int ms_prec = 3) {
+            ms_prec = Int32.Clamp(ms_prec, 1, 3);
+
+            StringBuilder sb = new();
+
+            if (ms <= 0) {
+                if (always_hours) {
+                    sb.Append("00:");
+                }
+
+                sb.Append("00:00");
+
+                if (show_ms) {
+                    sb.Append(".000");
+                }
+
+                return sb.ToString();
+            }
+
             long seconds = ms / 1000;
             long minutes = seconds / 60;
             long hours = minutes / 60;
-
-            StringBuilder sb = new();
 
             if (always_hours || hours > 0) {
                 sb.AppendFormat("{0:d2}:", hours);
@@ -16,7 +33,20 @@ namespace AiSync {
             sb.AppendFormat("{0:d2}:{1:d2}", minutes % 60, seconds % 60);
 
             if (show_ms) {
-                sb.AppendFormat(".{0:d3}", ms % 1000);
+                switch (ms_prec) {
+                    case 3:
+                        sb.AppendFormat(".{0:d3}", ms % 1000);
+                        break;
+
+                    case 2:
+                        sb.AppendFormat(".{0:d2}", (int)Math.Round((ms % 1000) / 10.0));
+                        break;
+
+                    case 1:
+                        sb.AppendFormat(".{0:d1}", (int)Math.Round((ms % 1000) / 100.0));
+                        break;
+                }
+                
             }
 
             return sb.ToString();
@@ -69,6 +99,12 @@ namespace AiSync {
         public static void WaitAndReset(this ManualResetEventSlim e) {
             e.Wait();
             e.Reset();
+        }
+
+        public static T Difference<T>(this T val, T comp) where T : INumber<T> {
+            T diff = val - comp;
+
+            return T.IsNegative(diff) ? -diff : diff;
         }
     }
 }

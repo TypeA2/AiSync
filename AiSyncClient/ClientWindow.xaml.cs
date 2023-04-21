@@ -1,16 +1,17 @@
-﻿using LibVLCSharp.Shared;
+﻿using AiSync;
+
+using LibVLCSharp.Shared;
+
+using Microsoft.Extensions.Logging;
 
 using System;
 using System.Diagnostics;
-using System.Globalization;
 using System.Net;
-using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
-using System.Windows.Data;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -44,18 +45,17 @@ namespace AiSyncClient {
         private bool playing = false;
         private bool scrubbing = false;
 
+        private readonly ILoggerFactory _logger_factory = LoggerFactory.Create(builder => {
+            builder.AddAiLogger()
+                   .SetMinimumLevel(Microsoft.Extensions.Logging.LogLevel.Debug);
+        });
+
         public ClientWindow() {
             InitializeComponent();
 
-            Video.Loaded += Video_Loaded;
-
             Loaded += Window_Loaded;
-
             Closed += ClientWindow_Closed;
-
-            PlayPause.IsEnabledChanged += (_, _) => UpdatePlayPause();
-
-            Scrubber.Formatter = AutoToolTipFormatter;
+            PreviewKeyDown += ClientWindow_PreviewKeyDown;
         }
 
         private string AutoToolTipFormatter(double pos) {
@@ -63,12 +63,7 @@ namespace AiSyncClient {
                 return "(unknown)";
             }
 
-            double actual_pos = pos * Player.Media.Duration;
-
-            return AiSync.Utils.FormatTime(
-                (long)Math.Round(actual_pos),
-                false,
-                Player.Media.Duration >= (3600 * 1000));
+            return GetTimeString(pos);
         }
 
         private void UpdatePlayPause() {
@@ -84,12 +79,7 @@ namespace AiSyncClient {
                 return;
             }
 
-            float actual_pos = Player.Position * Player.Media.Duration;
-
-            CurrentPosition.Text = AiSync.Utils.FormatTime(
-                (long)Math.Round(actual_pos),
-                false,
-                Player.Media.Duration >= (3600 * 1000));
+            CurrentPosition.Text = GetTimeString();
 
             if (!scrubbing) {
                 Scrubber.Value = Player.Position;
@@ -105,6 +95,15 @@ namespace AiSyncClient {
 
             PlayPause.IsEnabled = false;
         }
+
+        private string GetTimeString() => GetTimeString(Player.PositionMs());
+
+        private string GetTimeString(float pos) => GetTimeString((long)Math.Round(pos * (Player.Media?.Duration ?? 0)));
+
+        private string GetTimeString(double pos) => GetTimeString((long)Math.Round(pos * (Player.Media?.Duration ?? 0)));
+
+        private string GetTimeString(long pos)
+            => AiSync.Utils.FormatTime(pos, false, (Player.Media?.Duration ?? 0) >= (3600 * 1000));
 
         private void ClientWindow_Closed(object? sender, EventArgs e) {
             _player?.Dispose();
@@ -123,7 +122,7 @@ namespace AiSyncClient {
         }
 
         private void Volume_PreviewMouseWheel(object sender, MouseWheelEventArgs e) {
-            Volume.Value += Volume.SmallChange * (e.Delta < 0 ? -1 : 1);
+            //Volume.Value += Volume.SmallChange * (e.Delta < 0 ? -1 : 1);
         }
 
         private void Video_Loaded(object sender, RoutedEventArgs e) {
@@ -134,7 +133,70 @@ namespace AiSyncClient {
             Video.MediaPlayer = Player;
         }
 
+        private bool fullscreen = false;
+        private WindowStyle style;
+        private WindowState state;
+        private ResizeMode resize;
+
+        private (double height, double width) GetVirtualWindowSize() {
+            Window virtualWindow = new Window();
+            virtualWindow.Show();
+            virtualWindow.Opacity = 0;
+            virtualWindow.WindowState = WindowState.Maximized;
+            double returnHeight = virtualWindow.Height;
+            double returnWidth = virtualWindow.Width;
+            virtualWindow.Close();
+            return (returnHeight, returnWidth);
+        }
+
+        private void ToggleFullscreen() {
+            Trace.WriteLine($"Setting fullscreen to: {!fullscreen}");
+            if (fullscreen) {
+                WindowState = state;
+                WindowStyle = style;
+                ResizeMode = resize;
+
+                ScrubberGrid.Visibility = Visibility.Visible;
+                ParameterGrid.Visibility = Visibility.Visible;
+                ButtonGrid.Visibility = Visibility.Visible;
+
+                InputParameters.Visibility = Visibility.Visible;
+
+                Grid.SetRowSpan(Video, 1);
+
+                //ControlGrid.Background = Brushes.Transparent;
+                ControlGrid.Visibility = Visibility.Visible;
+
+                fullscreen = false;
+            } else {
+                WindowStyle = WindowStyle.None;
+                WindowState = WindowState.Maximized;
+                ResizeMode = ResizeMode.NoResize;
+
+                ButtonGrid.Visibility = Visibility.Collapsed;
+
+                InputParameters.Visibility = Visibility.Collapsed;
+
+                Grid.SetRowSpan(Video, 2);
+
+                //ControlGrid.Background = Brushes.White;
+                ControlGrid.Visibility = Visibility.Collapsed;
+
+                fullscreen = true;
+            }
+        }
+
         private void Window_Loaded(object sender, RoutedEventArgs e) {
+            PlayPause.IsEnabledChanged += (_, _) => UpdatePlayPause();
+
+            style = WindowStyle;
+            state = WindowState;
+            resize = ResizeMode;
+
+            Video.Loaded += Video_Loaded;
+
+            Scrubber.Formatter = AutoToolTipFormatter;
+            
             LockUI(true);
             Address.IsEnabled = true;
             VolumeDisplay.Width = VolumeDisplay.ActualWidth;
@@ -177,6 +239,94 @@ namespace AiSyncClient {
             Connect.IsEnabled = (comm_good && data_good && addr_good);
         }
 
+        private void TogglePlayback() {
+            if (_player is null || Player.Media is null) {
+                return;
+            }
+
+            /* Manually desync when connected to local ip (but not loopback) */
+            if (LocalControls.IsChecked ?? false) {
+                if (playing) {
+                    LastAction.Text = "Local pause";
+                    Player.Pause();
+                } else {
+                    LastAction.Text = "Local play";
+                    Player.Play();
+                }
+                playing = !playing;
+                UpdatePlayPause();
+                return;
+            }
+
+            PlayPause.IsEnabled = false;
+
+            if (playing) {
+                LastAction.Text = $"Request pause at {GetTimeString()}";
+                CommClient.RequestPause(Player.PositionMs());
+            } else {
+                LastAction.Text = $"Request play at {GetTimeString()}";
+                CommClient.RequestPlay(Player.PositionMs());
+            }
+        }
+
+        private void Scrub(double target) {
+            if (_player is not null && Player.Media is not null) {
+                long target_ms = (long)Math.Round(Player.Media.Duration * target);
+
+                if (LocalControls.IsChecked ?? false) {
+                    LastAction.Text = $"Local seek to {GetTimeString(target)}";
+
+                    Player.SeekTo(TimeSpan.FromMilliseconds(target_ms));
+                } else {
+                    LastAction.Text = $"Request seek to {GetTimeString(target)}";
+
+                    CommClient.RequestSeek(target_ms);
+
+                    Scrubber.IsEnabled = false;
+                }
+            }
+        }
+
+        private void ClientWindow_PreviewKeyDown(object sender, KeyEventArgs e) {
+            Trace.WriteLine($"Key: {e.Key}");
+            switch (e.Key) {
+                case Key.Space:
+                    if (PlayPause.IsEnabled) {
+                        TogglePlayback();
+                    }
+                    e.Handled = true;
+                    break;
+
+                case Key.Left:
+                    if (_player is not null && Player.Media is not null && Scrubber.IsEnabled) {
+                        /* 5 second steps */
+                        Scrub(Scrubber.Value - (5000.0 / Player.Media.Duration));
+                    }
+                    e.Handled = true;
+                    break;
+
+                case Key.Right:
+                    if (_player is not null && Player.Media is not null && Scrubber.IsEnabled) {
+                        /* 5 second steps */
+                        Scrub(Scrubber.Value + (5000.0 / Player.Media.Duration));
+                    }
+                    e.Handled = true;
+                    break;
+
+                case Key.F:
+                    ToggleFullscreen();
+                    e.Handled = true;
+                    break;
+
+                case Key.Escape:
+                    if (fullscreen) {
+                        ToggleFullscreen();
+                        e.Handled = true;
+                    }
+                    break;
+            }
+        }
+
         private void Address_TextChanged(object sender, TextChangedEventArgs e) {
             ValidateConnectionParams();
         }
@@ -191,12 +341,11 @@ namespace AiSyncClient {
         private void Port_PreviewTextInput(object sender, TextCompositionEventArgs e) {
             e.Handled = NumbersRegex().IsMatch(e.Text);
         }
-
         private async void Connect_Click(object sender, RoutedEventArgs e) {
             LockUI(true);
 
             /* Do connection stuff */
-            CommClient = new AiClient(IPAddress.Parse(Address.Text), CommPort.ParseText<ushort>());
+            CommClient = new AiClient(_logger_factory, IPAddress.Parse(Address.Text), CommPort.ParseText<ushort>());
 
             CommClient.GotFile += (_, _) => Dispatcher.Invoke(LoadMedia);
             CommClient.EnableControls += (_, _) => Dispatcher.Invoke(() => {
@@ -209,16 +358,24 @@ namespace AiSyncClient {
 
             CommClient.Seek += (_, e) => Dispatcher.Invoke(() => {
                 if (Player.Media is not null && Player.Media.IsParsed) {
+                    LastAction.Text = $"Seek to {GetTimeString(e.Target)}";
+
                     Player.SeekTo(TimeSpan.FromMilliseconds(e.Target));
                     Scrubber.IsEnabled = true;
                 }
             });
 
+            CommClient.UpdateStatus += (_, _) => Dispatcher.Invoke(() =>
+                CommClient.SetStatus(Player.IsPlaying, (Player.Media is null) ? 0 : Player.PositionMs()));
+
             bool connected = await CommClient.Connect();
 
             if (connected) {
+                LastAction.Text = "Connected to server";
+
                 Disconnect.IsEnabled = true;
             } else {
+                LastAction.Text = "Failed to connect to server";
                 CommPort.IsEnabled = true;
                 DataPort.IsEnabled = true;
                 Address.IsEnabled = true;
@@ -227,21 +384,46 @@ namespace AiSyncClient {
         }
 
         private void CommClient_PausePlay(PausePlayEventArgs e) {
+            /* Adjust position to sync with other clients if we're too far out of sync */
+            long diff = Player.PositionMs().Difference(e.Position);
+            TimeSpan? adjust = (diff > CommClient.CloseEnoughValue)
+                ? TimeSpan.FromMilliseconds(e.Position) : null;
             if (e.IsPlaying && !playing && Player.Media is not null && Player.Media.IsParsed) {
+                if (adjust is not null) {
+                    if (e.Position > Player.PositionMs()) {
+                        LastAction.Text = $"Server seek forward by {diff} ms and play";
+                    } else {
+                        LastAction.Text = $"Server seek backward by {diff} ms and play";
+                    }
+
+                    Player.SeekTo(adjust.Value);
+                } else {
+                    LastAction.Text = $"Server play (Δ={diff} ms)";
+                }
+
                 Player.Play();
                 playing = true;
             } else if (playing) {
+                
+
                 Player.Pause();
                 playing = false;
+
+                if (adjust is not null) {
+                    if (e.Position > Player.PositionMs()) {
+                        LastAction.Text = $"Server pause and seek forward by {diff} ms";
+                    } else {
+                        LastAction.Text = $"Server pause and seek backward by {diff} ms";
+                    }
+
+                    Player.SeekTo(adjust.Value);
+                } else {
+                    LastAction.Text = $"Server pause (Δ={diff} ms)";
+                }
             }
 
             PlayPause.IsEnabled = true;
             UpdatePlayPause();
-
-            /* Adjust position to sync with other clients if we're too far out of sync */
-            if (Math.Abs(e.Position - Player.PositionMs()) > CommClient.CloseEnoughValue) {
-                Player.SeekTo(TimeSpan.FromMilliseconds(e.Position));
-            }
         }
 
         private async void LoadMedia() {
@@ -263,6 +445,9 @@ namespace AiSyncClient {
 
             Player.Volume = (int)Math.Round(Volume.Value, 0);
 
+            LastAction.Text = "Media loaded";
+            ServerStatus.Text = "New media";
+
             CommClient.FileParsed();
         }
 
@@ -279,6 +464,8 @@ namespace AiSyncClient {
             CommClient.Disconnect();
             CommClient.Dispose();
 
+            LastAction.Text = "Disconnect from server";
+
             CommPort.IsEnabled = true;
             DataPort.IsEnabled = true;
             Address.IsEnabled = true;
@@ -286,29 +473,7 @@ namespace AiSyncClient {
         }
 
         private void PlayPause_Click(object sender, RoutedEventArgs e) {
-            if (_player is null || Player.Media is null) {
-                return;
-            }
-
-            /* Manually desync when connected to local ip (but not loopback) */
-            if (Address.Text.StartsWith("192")) {
-                if (playing) {
-                    Player.Pause();
-                } else {
-                    Player.Play();
-                }
-                playing = !playing;
-                UpdatePlayPause();
-                return;
-            }
-
-            PlayPause.IsEnabled = false;
-
-            if (playing) {
-                CommClient.RequestPause(Player.PositionMs());
-            } else {
-                CommClient.RequestPlay(Player.PositionMs());
-            }
+            TogglePlayback();
         }
 
         private void Scrubber_DragStarted(object sender, DragStartedEventArgs e) {
@@ -320,13 +485,17 @@ namespace AiSyncClient {
         }
 
         private void Scrubber_DragCompleted(object sender, DragCompletedEventArgs e) {
-            if (_player is not null && Player.Media is not null) {
-                CommClient.RequestSeek((long)Math.Round(Player.Media.Duration * Scrubber.Value));
-
-                Scrubber.IsEnabled = false;
-            }
+            Scrub(Scrubber.Value);
 
             scrubbing = false;
+        }
+
+        private void Video_MouseDoubleClick(object sender, MouseButtonEventArgs e) {
+            ToggleFullscreen();
+        }
+
+        private void Video_PreviewMouseWheel(object sender, MouseWheelEventArgs e) {
+            Volume.Value += Volume.SmallChange * (e.Delta < 0 ? -1 : 1);
         }
     }
 }

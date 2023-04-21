@@ -2,6 +2,8 @@
 
 using LibVLCSharp.Shared;
 
+using HeyRed.Mime;
+
 using System;
 using System.IO;
 using System.Net;
@@ -11,8 +13,8 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Controls;
 using System.Windows.Media.Imaging;
-using System.Diagnostics;
-using HeyRed.Mime;
+
+using Microsoft.Extensions.Logging;
 
 namespace AiSyncServer {
     public partial class ServerWindow : Window {
@@ -44,6 +46,12 @@ namespace AiSyncServer {
             get => _data_server ?? throw new InvalidOperationException("No data server instance exists");
             set => _data_server = value;
         }
+
+        private readonly ILoggerFactory _logger_factory = LoggerFactory.Create(builder => {
+            builder
+                .AddAiLogger()
+                .SetMinimumLevel(Microsoft.Extensions.Logging.LogLevel.Debug);
+        });
 
         public ServerWindow() {
             InitializeComponent();
@@ -122,7 +130,7 @@ namespace AiSyncServer {
         }
 
         private void SetCurrentPos(long ms) {
-            CurrentPos.Text = AiSync.Utils.FormatTime(ms, always_hours: Media.Duration >= (3600 * 1000));
+            CurrentPos.Text = AiSync.Utils.FormatTime(ms, always_hours: Media.Duration >= (3600 * 1000), ms_prec: 3);
         }
 
         private void Port_TextChanged(object sender, TextChangedEventArgs e) {
@@ -195,6 +203,7 @@ namespace AiSyncServer {
             CurrentPos.Text = "--:--";
 
             /* TODO notify clients */
+            CommServer.StopPlayback();
 
             DataServer.Dispose();
 
@@ -203,8 +212,7 @@ namespace AiSyncServer {
 
         private void Start_Click(object sender, RoutedEventArgs e) {
             LockUI(true);
-
-            CommServer = new AiServer(IPAddress.Any, CommPort.ParseText<ushort>());
+            CommServer = new AiServer(_logger_factory, IPAddress.Any, CommPort.ParseText<ushort>());
             CommServer.ServerStarted += ServerStarted;
             CommServer.ClientConnected += (_, _) => Dispatcher.Invoke(ClientConnected);
 
@@ -212,7 +220,7 @@ namespace AiSyncServer {
                 () => Playing.Text = e.IsPlaying ? "true" : "false");
 
             CommServer.PositionChanged += (_, e) =>
-                Dispatcher.Invoke(() => CurrentPos.Text = AiSync.Utils.FormatTime(e.Position));
+                Dispatcher.Invoke(() => SetCurrentPos(e.Position));
 
             CommServer.Start();
 

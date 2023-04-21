@@ -65,6 +65,11 @@ namespace AiSync {
 
         ClientRequestsSeek,
         ServerRequestsSeek,
+
+        ServerRequestsStatus,
+
+        ClientStatus,
+        ServerStatus,
     }
 
     [AiProtocolMessage(AiMessageType.None)]
@@ -170,25 +175,21 @@ namespace AiSync {
     [AiProtocolMessage(AiMessageType.ServerRequestsSeek)]
     public class AiServerRequestSeek : AiSeekRequest { }
 
-    /* Cannot be directly used, must be derived */
-    public abstract class AiActionAccepted : AiProtocolMessage {
-        [JsonProperty("accepted", Required = Required.Always)]
-        public bool Accepted { get; set; }
+    [AiProtocolMessage(AiMessageType.ServerRequestsStatus)]
+    public class AiServerRequestsStatus : AiProtocolMessage { }
+
+    /* Base class for status messages */
+    public class AiStatusMessage : AiProtocolMessage {
+        [JsonProperty("playing", Required = Required.Always)]
+        public bool IsPlaying { get; set; }
+
+        [JsonProperty("position", Required = Required.Always)]
+        public long Position { get; set; }
     }
 
-    /*
-    [AiProtocolMessage(AiMessageType.NewFileSelected)]
-    public class AiNewFileSelected : AiProtocolMessage {
-        [JsonProperty("name", Required = Required.Always)]
-        public string Name { get; set; } = String.Empty;
+    [AiProtocolMessage(AiMessageType.ClientStatus)]
+    public class AiClientStatus : AiStatusMessage { }
 
-        [JsonProperty("hash", Required = Required.Always)]
-        public string Hash { get; set; } = String.Empty;
-    }
-
-    [AiProtocolMessage(AiMessageType.NewFileAccepted)]
-    public class AiNewFileAccepted : AiActionAccepted { }
-
-    [AiProtocolMessage(AiMessageType.AllClientsReady)]
-    public class AiAllClientsReady : AiProtocolMessage { }*/
+    [AiProtocolMessage(AiMessageType.ServerStatus)]
+    public class AiServerStatus : AiStatusMessage { }
 }

@@ -6,68 +6,92 @@
         xmlns:local="clr-namespace:AiSyncClient"
         xmlns:vlc="clr-namespace:LibVLCSharp.WPF;assembly=LibVLCSharp.WPF"
         mc:Ignorable="d"
-        x:Name="Window" FontSize="13"
+        x:Name="Window" FontSize="13" PreviewMouseWheel="Video_PreviewMouseWheel"
         Title="AiSync Client" Height="640" Width="960">
-    <Grid>
-        
+    <Grid x:Name="MainGrid">
         <Grid.RowDefinitions>
             <RowDefinition Height="*"/>
             <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
-            <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
-        
-        <vlc:VideoView x:Name="Video" Grid.Row="0" Background="Black"/>
-        
-        <Grid Grid.Row="1" Margin="0 5 0 5">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
+
+        <vlc:VideoView x:Name="Video" Grid.Row="0" Panel.ZIndex="0" Background="Black"
+                       
+                       MouseDoubleClick="Video_MouseDoubleClick">
+
+        </vlc:VideoView>
+
+        <Grid x:Name="ControlGrid" Grid.Row="1" Panel.ZIndex="1">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
             
-            <TextBlock x:Name="CurrentPosition" Grid.Column="0" Margin="15 0 5 0" VerticalAlignment="Center" Text="--:--"/>
-            <local:AiSlider x:Name="Scrubber" Grid.Column="1" VerticalAlignment="Center" Minimum="0" Maximum="1"
+            <Grid x:Name="ScrubberGrid" Grid.Row="0" Margin="0 5 0 5">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <TextBlock x:Name="CurrentPosition" Grid.Column="0" Margin="15 0 5 0" VerticalAlignment="Center" Text="--:--"/>
+                <local:AiSlider x:Name="Scrubber" Grid.Column="1" VerticalAlignment="Center" Minimum="0" Maximum="1"
                             AutoToolTipPlacement="TopLeft" Thumb.DragStarted="Scrubber_DragStarted"
                             Thumb.DragDelta="Scrubber_DragDelta" Thumb.DragCompleted="Scrubber_DragCompleted"/>
-            <TextBlock x:Name="Duration" Grid.Column="2" VerticalAlignment="Center" Margin="5 0 15 0" Text="--:--"/>
-        </Grid>
-        <Grid Grid.Row="2" Margin="10 0 10 10">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-                <ColumnDefinition Width="Auto"/>
-            </Grid.ColumnDefinitions>
+                <TextBlock x:Name="Duration" Grid.Column="2" VerticalAlignment="Center" Margin="5 0 15 0" Text="--:--"/>
+            </Grid>
+            
+            <Grid x:Name="ParameterGrid" Grid.Row="1" Margin="10 0 10 10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
 
-            <StackPanel Orientation="Horizontal" Grid.Column="0">
-                <TextBlock x:Name="AddressText" VerticalAlignment="Center" Margin="0 0 10 0" Text="Address:"/>
-                <TextBox x:Name="Address" VerticalAlignment="Center" Margin="0 0 10 0"
+                <StackPanel x:Name="InputParameters" Orientation="Horizontal" Grid.Column="0">
+                    <TextBlock x:Name="AddressText" VerticalAlignment="Center" Margin="0 0 10 0" Text="Address:"/>
+                    <TextBox x:Name="Address" VerticalAlignment="Center" Margin="0 0 10 0"
                          TextAlignment="Left" Width="256" Text="127.0.0.1" TextChanged="Address_TextChanged"/>
 
-                <TextBlock x:Name="CommPortText" VerticalAlignment="Center" Margin="0 0 10 0" Text="Comms port:" />
-                <TextBox x:Name="CommPort" VerticalAlignment="Center" Width="48" Margin="0 0 10 0"
+                    <TextBlock x:Name="CommPortText" VerticalAlignment="Center" Margin="0 0 10 0" Text="Comms port:" />
+                    <TextBox x:Name="CommPort" VerticalAlignment="Center" Width="48" Margin="0 0 10 0"
                          Text="26980" TextAlignment="Center" MaxLength="5"
                          TextChanged="Port_TextChanged" PreviewTextInput="Port_PreviewTextInput"/>
 
-                <TextBlock x:Name="DataPortText" VerticalAlignment="Center" Margin="0 0 10 0" Text="Data port:" />
-                <TextBox x:Name="DataPort" VerticalAlignment="Center" Width="48" Margin="0 0 10 0"
+                    <TextBlock x:Name="DataPortText" VerticalAlignment="Center" Margin="0 0 10 0" Text="Data port:" />
+                    <TextBox x:Name="DataPort" VerticalAlignment="Center" Width="48" Margin="0 0 10 0"
                          Text="28524" TextAlignment="Center" MaxLength="5"
                          TextChanged="Port_TextChanged" PreviewTextInput="Port_PreviewTextInput"/>
-            </StackPanel>
 
-            <StackPanel Orientation="Horizontal" Grid.Column="2">
-                <Button x:Name="PlayPause" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="0 0 10 0" Click="PlayPause_Click">
-                    <Image x:Name="PlayPauseImage" Width="24" Height="24" Source="icons8-play.png"/>
-                </Button>
+                    <TextBlock VerticalAlignment="Center" Margin="0 0 10 0" Text="Local controls:"/>
+                    <CheckBox x:Name="LocalControls" Margin="0 0 10 0" VerticalAlignment="Center" IsEnabled="False"/>
+                </StackPanel>
 
-                <TextBlock x:Name="VolumeDisplay" VerticalAlignment="Center" Margin="0 0 10 0" TextAlignment="Right" Text="100%"/>
-                <Slider x:Name="Volume" Width="100" VerticalAlignment="Center" Margin="0 0 10 0"  Minimum="0" Maximum="100" Value="100"
+                <StackPanel x:Name="ControlParameters" Orientation="Horizontal" Grid.Column="2">
+                    <Button x:Name="PlayPause" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="0 0 10 0" Click="PlayPause_Click">
+                        <Image x:Name="PlayPauseImage" Width="24" Height="24" Source="icons8-play.png"/>
+                    </Button>
+
+                    <TextBlock x:Name="VolumeDisplay" VerticalAlignment="Center" Margin="0 0 10 0" TextAlignment="Right" Text="100%"/>
+                    <Slider x:Name="Volume" Width="100" VerticalAlignment="Center" Margin="0 0 10 0"  Minimum="0" Maximum="100" Value="100"
                         SmallChange="5" LargeChange="25" ValueChanged="Volume_ValueChanged" PreviewMouseWheel="Volume_PreviewMouseWheel"/>
-            </StackPanel>
+                </StackPanel>
+            </Grid>
+            <Grid x:Name="ButtonGrid" Grid.Row="2" Margin="10 0 10 10">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <Button x:Name="Connect" Grid.Column="0" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0 0 10 0" Padding="2" Content="Connect" Click="Connect_Click"/>
+                <Button x:Name="Disconnect" Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0 0 10 0" Padding="2" Content="Disconnect" Click="Disconnect_Click"/>
+                <TextBlock x:Name="LastAction" Grid.Column="2" VerticalAlignment="Center" Margin="0 0 10 0"/>
+                <TextBlock x:Name="ServerStatus" Grid.Column="4" VerticalAlignment="Center" Margin="0 0 10 0"/>
+            </Grid>
         </Grid>
-        <StackPanel Grid.Row="3" Orientation="Horizontal" Margin="10 0 10 10">
-            <Button x:Name="Connect" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0 0 10 0" Padding="2" Content="Connect" Click="Connect_Click"/>
-            <Button x:Name="Disconnect" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0 0 10 0" Padding="2" Content="Disconnect" Click="Disconnect_Click"/>
-        </StackPanel>
+        
     </Grid>
 </Window>

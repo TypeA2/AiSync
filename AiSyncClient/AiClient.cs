@@ -1,7 +1,8 @@
 ﻿using AiSync;
 
+using Microsoft.Extensions.Logging;
+
 using System;
-using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
 using System.Reflection;
@@ -39,15 +40,24 @@ namespace AiSyncClient {
 
         public event EventHandler<SeekEventArgs>? Seek;
 
+        public event EventHandler? UpdateStatus;
+
         public long CloseEnoughValue { get; private set; }
+
+        private readonly ILogger _logger;
 
         private readonly WatsonTcpClient client;
 
         private readonly ManualResetEventSlim sync_wait = new(false);
 
-        public AiClient(IPAddress addr, ushort port) : this(new IPEndPoint(addr, port)) { }
+        private bool playing = false;
+        private long pos_ms = 0;
 
-        public AiClient(IPEndPoint endpoint) {
+        public AiClient(ILoggerFactory fact, IPAddress addr, ushort port) : this(fact, new IPEndPoint(addr, port)) { }
+
+        public AiClient(ILoggerFactory fact, IPEndPoint endpoint) {
+            _logger = fact.CreateLogger("AiClient");
+
             client = new WatsonTcpClient(endpoint.Address.ToString(), endpoint.Port);
             client.Events.ServerConnected += ServerConnected;
             client.Events.ServerDisconnected += ServerDisconnected;
@@ -62,33 +72,49 @@ namespace AiSyncClient {
         }
 
         public Task<bool> Connect() {
+            _logger.LogInformation("Connecting to server");
+
             return Task.Run(() => {
                 try {
                     client.Connect();
                 } catch (SocketException) {
                     /* pass */
+                    _logger.LogWarning("Timed out when connecting to server");
                 }
                 return client.Connected;
             });
         }
 
         public void Disconnect() {
+            _logger.LogInformation("Disconnecting");
             client.Disconnect();
         }
 
         public void FileParsed() {
+            _logger.LogInformation("Input media done parsing");
+            sync_wait.Set();
+        }
+
+        public void SetStatus(bool playing, long pos_ms) {
+            _logger.LogDebug("Status request, playing={}, pos={}", playing, pos_ms);
+            this.playing = playing;
+            this.pos_ms = pos_ms;
+
             sync_wait.Set();
         }
 
         public async void RequestPause(long pos) {
+            _logger.LogInformation("Sending pause request at {}", AiSync.Utils.FormatTime(pos));
             await SendMessage(new AiClientRequestsPause() { Position = pos });
         }
 
         public async void RequestPlay(long pos) {
+            _logger.LogInformation("Sending play request at {}", AiSync.Utils.FormatTime(pos));
             await SendMessage(new AiClientRequestsPlay() { Position = pos });
         }
 
         public async void RequestSeek(long target) {
+            _logger.LogInformation("Sending seek request to {}", AiSync.Utils.FormatTime(target));
             await SendMessage(new AiClientRequestSeek() { Target = target });
         }
 
@@ -97,10 +123,10 @@ namespace AiSyncClient {
         }
 
         private void ServerConnected(object? sender, ConnectionEventArgs e) {
-            Trace.WriteLine($"Client connected");
+            _logger.LogInformation("Connected");
         }
         private void ServerDisconnected(object? sender, DisconnectionEventArgs e) {
-            Trace.WriteLine($"Client disconnected: {e.Reason}");
+            _logger.LogInformation("Disconnected, reason: ", e.Reason);
         }
 
         private void MessageReceived(object? sender, MessageReceivedEventArgs e) {
@@ -134,11 +160,28 @@ namespace AiSyncClient {
                     /* Parse file and reply with AiFileParsed */
                     AiFileReady msg = str.AiDeserialize<AiFileReady>();
 
+                    _logger.LogInformation("Server file ready, parsing");
+
                     CloseEnoughValue = msg.CloseEnoughValue;
 
                     GotFile?.Invoke(this, EventArgs.Empty);
                     sync_wait.WaitAndReset();
+
+                    _logger.LogInformation("Parsing finished");
+
                     return req.ReplyWith<AiFileParsed>();
+                }
+
+                case AiMessageType.ServerRequestsStatus: {
+                    AiClientStatus status = new();
+
+                    UpdateStatus?.Invoke(this, EventArgs.Empty);
+                    sync_wait.WaitAndReset();
+
+                    status.IsPlaying = playing;
+                    status.Position = pos_ms;
+
+                    return req.ReplyWith(status);
                 }
 
                 default:
@@ -147,27 +190,32 @@ namespace AiSyncClient {
         }
 
         private void ExceptionEncountered(object? sender, ExceptionEventArgs e) {
-        
+            _logger.LogCritical("Exception encountered: {}", e.Exception);
         }
 
         private void HandleServerReady(AiServerReady msg) {
+            _logger.LogInformation("Server is ready");
             EnableControls?.Invoke(this, EventArgs.Empty);
         }
 
         private void HandleServerRequestsPause(AiServerRequestsPause msg) {
+            _logger.LogInformation("Server requests pause at {}", AiSync.Utils.FormatTime(msg.Position));
             PausePlay?.Invoke(this, new PausePlayEventArgs(msg.Position, false));
         }
 
         private void HandleServerRequestsPlay(AiServerRequestsPlay msg) {
+            _logger.LogInformation("Server requests play at {}", AiSync.Utils.FormatTime(msg.Position));
             PausePlay?.Invoke(this, new PausePlayEventArgs(msg.Position, true));
 
         }
 
         private void HandleServerRequestsSeek(AiServerRequestSeek msg) {
+            _logger.LogInformation("Server requests seek to {}", AiSync.Utils.FormatTime(msg.Target));
             Seek?.Invoke(this, new SeekEventArgs(msg.Target));
         }
 
         private void HandleDefault(AiProtocolMessage msg) {
+            _logger.LogCritical("Unexpected message of type {} from {}", msg.Type, client);
             throw new InvalidMessageException(msg);
         }
     }
