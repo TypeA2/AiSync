@@ -1,9 +1,36 @@
 ﻿using Newtonsoft.Json;
 
-using System;
-using System.Diagnostics;
+using System.Text;
 
 namespace AiSync {
+    public static class AiProtocol {
+        public static string Serialize<T>(this T obj) where T : AiProtocolMessage {
+            return JsonConvert.SerializeObject(obj);
+        }
+
+        public static T AiDeserialize<T>(this string data) where T : AiProtocolMessage {
+            T result = JsonConvert.DeserializeObject<T>(data) ?? throw new InvalidMessageException(typeof(T), data);
+            result.SourceString = data;
+
+            return result;
+        }
+
+        public static object AiDeserialize(this string data, Type type) {
+            if (!type.IsAssignableTo(typeof(AiProtocolMessage))) {
+                throw new InvalidOperationException($"{type.Name} does not derive from {typeof(AiProtocolMessage).Name}");
+            }
+
+            object result = JsonConvert.DeserializeObject(data, type) ?? throw new InvalidMessageException(type, data);
+            ((AiProtocolMessage)result).SourceString = data;
+
+            return result;
+        }
+
+        public static AiMessageType AiJsonMessageType(this string data) => AiDeserialize<AiProtocolMessage>(data).Type;
+
+        public static string ToUtf8(this byte[] data) => Encoding.UTF8.GetString(data);
+    }
+
     public class InvalidMessageException : Exception {
         public InvalidMessageException(Type type, string data)
             : base($"{type.Name}: {data}") { }
@@ -12,6 +39,7 @@ namespace AiSync {
             : base($"Invalid message of type {msg.Type}: {msg.SourceString}") { }
     }
 
+    /* Base message to derive from */
     [AttributeUsage(AttributeTargets.Class, AllowMultiple = false, Inherited = false)]
     public class AiProtocolMessageAttribute : Attribute {
         public AiMessageType Type { get; set; }
@@ -23,10 +51,20 @@ namespace AiSync {
 
     public enum AiMessageType {
         None,
-        NewFileSelected,
-        NewFileAccepted,
 
-        AllClientsReady,
+        FileReady,
+        FileParsed,
+
+        ServerReady,
+
+        ClientRequestsPause,
+        ServerRequestsPause,
+
+        ClientRequestsPlay,
+        ServerRequestsPlay,
+
+        ClientRequestsSeek,
+        ServerRequestsSeek,
     }
 
     [AiProtocolMessage(AiMessageType.None)]
@@ -76,12 +114,69 @@ namespace AiSync {
         }
     }
 
+    /* The playback file is ready on the data server */
+    [AiProtocolMessage(AiMessageType.FileReady)]
+    public class AiFileReady : AiProtocolMessage {
+        public static AiFileReady FromCloseEnough(long val) {
+            return new AiFileReady() { CloseEnoughValue = val };
+        }
+
+        [JsonProperty("close_enough_value", Required = Required.Always)]
+        public long CloseEnoughValue { get; set; }
+    }
+
+    /* Client has parsed the file and is awaiting the start of playback */
+    [AiProtocolMessage(AiMessageType.FileParsed)]
+    public class AiFileParsed : AiProtocolMessage { }
+
+    /* Server is ready, clients can begin control */
+    [AiProtocolMessage(AiMessageType.ServerReady)]
+    public class AiServerReady : AiProtocolMessage { }
+
+    /* Base class for messages with a position attachment */
+    public class AiPositionMessage : AiProtocolMessage {
+        public static T FromPosition<T>(long pos) where T : AiPositionMessage, new() {
+            return new T() { Position = pos };
+        }
+
+        [JsonProperty("position", Required = Required.Always)]
+        public long Position { get; set; }
+    }
+
+    /* A client requests the shared playback to stop */
+    [AiProtocolMessage(AiMessageType.ClientRequestsPause)]
+    public class AiClientRequestsPause : AiPositionMessage { }
+
+    /* Server requests the receiving client to pause playback */
+    [AiProtocolMessage(AiMessageType.ServerRequestsPause)]
+    public class AiServerRequestsPause : AiPositionMessage { }
+
+    /* Ditto but for resuming playback */
+    [AiProtocolMessage(AiMessageType.ClientRequestsPlay)]
+    public class AiClientRequestsPlay : AiPositionMessage { }
+
+    [AiProtocolMessage(AiMessageType.ServerRequestsPlay)]
+    public class AiServerRequestsPlay : AiPositionMessage { }
+
+    /* Base class used for seek messages */
+    public class AiSeekRequest : AiProtocolMessage {
+        [JsonProperty("target", Required = Required.Always)]
+        public long Target { get; set; }
+    }
+
+    [AiProtocolMessage(AiMessageType.ClientRequestsSeek)]
+    public class AiClientRequestSeek : AiSeekRequest { }
+
+    [AiProtocolMessage(AiMessageType.ServerRequestsSeek)]
+    public class AiServerRequestSeek : AiSeekRequest { }
+
     /* Cannot be directly used, must be derived */
     public abstract class AiActionAccepted : AiProtocolMessage {
         [JsonProperty("accepted", Required = Required.Always)]
         public bool Accepted { get; set; }
     }
 
+    /*
     [AiProtocolMessage(AiMessageType.NewFileSelected)]
     public class AiNewFileSelected : AiProtocolMessage {
         [JsonProperty("name", Required = Required.Always)]
@@ -95,5 +190,5 @@ namespace AiSync {
     public class AiNewFileAccepted : AiActionAccepted { }
 
     [AiProtocolMessage(AiMessageType.AllClientsReady)]
-    public class AiAllClientsReady : AiProtocolMessage { }
+    public class AiAllClientsReady : AiProtocolMessage { }*/
 }

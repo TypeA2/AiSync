@@ -1,0 +1,44 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net7.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <UseWPF>true</UseWPF>
+    <PlatformTarget>x64</PlatformTarget>
+    <ApplicationIcon>AiSync.ico</ApplicationIcon>
+    <Platforms>x64</Platforms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Remove="icons8-stop-disabled.png" />
+    <None Remove="icons8-stop.png" />
+    <None Remove="icons8-upload-disabled.png" />
+    <None Remove="icons8-upload.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="AiSync.ico" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="LibVLCSharp" Version="3.7.0" />
+    <PackageReference Include="LibVLCSharp.WPF" Version="3.7.0" />
+    <PackageReference Include="MimeTypesMap" Version="1.0.8" />
+    <PackageReference Include="System.IO.Hashing" Version="7.0.0" />
+    <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.18" />
+    <PackageReference Include="WatsonTcp" Version="5.1.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AiSync\AiSync.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="icons8-stop-disabled.png" />
+    <Resource Include="icons8-stop.png" />
+    <Resource Include="icons8-upload-disabled.png" />
+    <Resource Include="icons8-upload.png" />
+  </ItemGroup>
+
+</Project>

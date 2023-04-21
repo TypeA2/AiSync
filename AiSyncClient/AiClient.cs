@@ -1,0 +1,174 @@
+﻿using AiSync;
+
+using System;
+using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
+using System.Reflection;
+using System.Threading;
+using System.Threading.Tasks;
+
+using WatsonTcp;
+
+namespace AiSyncClient {
+    internal class SeekEventArgs : EventArgs {
+        public SeekEventArgs(long target) : base() {
+            Target = target;
+        }
+
+        public long Target { get; }
+    }
+
+    internal class PausePlayEventArgs : EventArgs {
+        
+        public PausePlayEventArgs(long pos, bool playing) : base() {
+            Position = pos;
+            IsPlaying = playing;
+        }
+
+        public long Position { get; }
+
+        public bool IsPlaying { get; }
+    }
+
+    internal class AiClient : IDisposable {
+        public event EventHandler? GotFile;
+        public event EventHandler? EnableControls;
+
+        public event EventHandler<PausePlayEventArgs>? PausePlay;
+
+        public event EventHandler<SeekEventArgs>? Seek;
+
+        public long CloseEnoughValue { get; private set; }
+
+        private readonly WatsonTcpClient client;
+
+        private readonly ManualResetEventSlim sync_wait = new(false);
+
+        public AiClient(IPAddress addr, ushort port) : this(new IPEndPoint(addr, port)) { }
+
+        public AiClient(IPEndPoint endpoint) {
+            client = new WatsonTcpClient(endpoint.Address.ToString(), endpoint.Port);
+            client.Events.ServerConnected += ServerConnected;
+            client.Events.ServerDisconnected += ServerDisconnected;
+            client.Events.MessageReceived += MessageReceived;
+            client.Events.ExceptionEncountered += ExceptionEncountered;
+            client.Callbacks.SyncRequestReceived = SyncRequestReceived;
+        }
+
+        public void Dispose() {
+            client.Dispose();
+            GC.SuppressFinalize(this);
+        }
+
+        public Task<bool> Connect() {
+            return Task.Run(() => {
+                try {
+                    client.Connect();
+                } catch (SocketException) {
+                    /* pass */
+                }
+                return client.Connected;
+            });
+        }
+
+        public void Disconnect() {
+            client.Disconnect();
+        }
+
+        public void FileParsed() {
+            sync_wait.Set();
+        }
+
+        public async void RequestPause(long pos) {
+            await SendMessage(new AiClientRequestsPause() { Position = pos });
+        }
+
+        public async void RequestPlay(long pos) {
+            await SendMessage(new AiClientRequestsPlay() { Position = pos });
+        }
+
+        public async void RequestSeek(long target) {
+            await SendMessage(new AiClientRequestSeek() { Target = target });
+        }
+
+        private Task SendMessage<T>(T? msg = null) where T : AiProtocolMessage, new() {
+            return client.SendAsync((msg ?? new T()).Serialize());
+        }
+
+        private void ServerConnected(object? sender, ConnectionEventArgs e) {
+            Trace.WriteLine($"Client connected");
+        }
+        private void ServerDisconnected(object? sender, DisconnectionEventArgs e) {
+            Trace.WriteLine($"Client disconnected: {e.Reason}");
+        }
+
+        private void MessageReceived(object? sender, MessageReceivedEventArgs e) {
+            string str = e.Data.ToUtf8();
+            AiMessageType type = str.AiJsonMessageType();
+
+            Delegate handler = str.AiJsonMessageType() switch {
+                AiMessageType.ServerReady => HandleServerReady,
+                AiMessageType.ServerRequestsPause => HandleServerRequestsPause,
+                AiMessageType.ServerRequestsPlay => HandleServerRequestsPlay,
+                AiMessageType.ServerRequestsSeek => HandleServerRequestsSeek,
+                _ => HandleDefault,
+            };
+
+            ParameterInfo[] handler_params = handler.GetMethodInfo().GetParameters();
+
+            /* Should never happen */
+            if (handler_params.Length != 1 || !handler_params[0].ParameterType.IsAssignableTo(typeof(AiProtocolMessage))) {
+                throw new ArgumentException("invalid delegate");
+            }
+
+            handler.DynamicInvoke(str.AiDeserialize(handler_params[0].ParameterType));
+        }
+
+        private SyncResponse SyncRequestReceived(SyncRequest req) {
+            string str = req.Data.ToUtf8();
+            AiMessageType type = str.AiJsonMessageType();
+            
+            switch (type) {
+                case AiMessageType.FileReady: {
+                    /* Parse file and reply with AiFileParsed */
+                    AiFileReady msg = str.AiDeserialize<AiFileReady>();
+
+                    CloseEnoughValue = msg.CloseEnoughValue;
+
+                    GotFile?.Invoke(this, EventArgs.Empty);
+                    sync_wait.WaitAndReset();
+                    return req.ReplyWith<AiFileParsed>();
+                }
+
+                default:
+                    throw new InvalidMessageException(str.AiDeserialize<AiProtocolMessage>());
+            }
+        }
+
+        private void ExceptionEncountered(object? sender, ExceptionEventArgs e) {
+        
+        }
+
+        private void HandleServerReady(AiServerReady msg) {
+            EnableControls?.Invoke(this, EventArgs.Empty);
+        }
+
+        private void HandleServerRequestsPause(AiServerRequestsPause msg) {
+            PausePlay?.Invoke(this, new PausePlayEventArgs(msg.Position, false));
+        }
+
+        private void HandleServerRequestsPlay(AiServerRequestsPlay msg) {
+            PausePlay?.Invoke(this, new PausePlayEventArgs(msg.Position, true));
+
+        }
+
+        private void HandleServerRequestsSeek(AiServerRequestSeek msg) {
+            Seek?.Invoke(this, new SeekEventArgs(msg.Target));
+        }
+
+        private void HandleDefault(AiProtocolMessage msg) {
+            throw new InvalidMessageException(msg);
+        }
+    }
+}

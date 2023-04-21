@@ -1,68 +1,74 @@
-﻿using System;
-using System.Diagnostics;
-using System.Windows.Interop;
-using System.Windows.Media.Imaging;
-using System.Windows.Media;
-using System.Windows;
-using System.Runtime.InteropServices;
-using System.Security.Cryptography;
-using System.IO;
-using System.Threading.Tasks;
-using Microsoft.Win32;
-using System.Windows.Documents.Serialization;
+﻿using System.Text;
 
 namespace AiSync {
-    internal static partial class Utils {
-        [LibraryImport("shell32.dll", StringMarshalling = StringMarshalling.Utf16)]
-        private static partial IntPtr ExtractIconW(IntPtr hInst, string lpszExeFileName, int nIconIndex);
+    public static class Utils {
+        public static string FormatTime(long ms, bool show_ms = true, bool always_hours = false) {
+            long seconds = ms / 1000;
+            long minutes = seconds / 60;
+            long hours = minutes / 60;
 
-        public static ImageSource ExtractIcon(string source, int idx) {
-            IntPtr icon = ExtractIconW(Process.GetCurrentProcess().Handle, source, idx);
+            StringBuilder sb = new();
 
-            return Imaging.CreateBitmapSourceFromHIcon(icon, Int32Rect.Empty, BitmapSizeOptions.FromWidthAndHeight(128, 128));
-        }
-
-        public static string SHA512File(string path, Action<long> progress) {
-            using SHA512 sha512 = SHA512.Create();
-            using FileStream stream = File.OpenRead(path);
-
-            byte[] buffer = new byte[4096];
-
-            long total_read = 0;
-            
-            while (total_read < stream.Length) {
-                int read = stream.Read(buffer);
-
-                total_read += read;
-
-                sha512.TransformBlock(buffer, 0, read, buffer, 0);
-
-                progress(total_read);
+            if (always_hours || hours > 0) {
+                sb.AppendFormat("{0:d2}:", hours);
             }
 
-            sha512.TransformFinalBlock(buffer, 0, 0);
-            progress(stream.Length);
+            sb.AppendFormat("{0:d2}:{1:d2}", minutes % 60, seconds % 60);
 
-            return BitConverter.ToString(sha512.Hash ?? new byte[sha512.HashSize / 8]).Replace("-", "").ToLowerInvariant();
-        }
-
-        public static async Task<string> SHA512FileAsync(string path, Action<long> progress) {
-            return await Task.Run(() => SHA512File(path, progress));
-        }
-
-        /* Returns whether a file was selected */
-        public static bool GetFile(out string result, string filter = "All files (*.*)|*.*") {
-            OpenFileDialog dialog = new() {
-                Filter = filter,
-            };
-
-            if (dialog.ShowDialog() == true) {
-                result = dialog.FileName;
-                return true;
-            } else {
-                result = String.Empty;
-                return false;
+            if (show_ms) {
+                sb.AppendFormat(".{0:d3}", ms % 1000);
             }
+
+            return sb.ToString();
+        }
+
+        private static readonly char[] hex_map = {
+            '0', '1', '2', '3', '4', '5', '6', '7',
+            '8', '9', 'a', 'b', 'c', 'd', 'e', 'f'
+        };
+
+        public static string HttpHeaderEncode(this string str) {
+            StringBuilder sb = new();
+
+            foreach (char ch in str) {
+                /* Check if it's within ASCII range */
+                if (ch > 127) {
+                    /* Write this character as UTF8 bytes */
+                    byte[] bytes = Encoding.UTF8.GetBytes($"{ch}");
+
+                    foreach (byte b in bytes) {
+                        sb.Append('%');
+
+                        /* Write in 2 nybbles */
+                        sb.Append(hex_map[(b >> 4) & 0xF]);
+                        sb.Append(hex_map[b & 0xF]);
+                    }
+                } else {
+                    /* Write raw ASCII */
+                    sb.Append(ch);
+                }
+            }
+
+            return sb.ToString();
+        }
+
+        public static string ReplaceNonAscii(this string str, char replacement = '?') {
+            StringBuilder sb = new();
+
+            foreach (char ch in str) {
+                if (ch > 127) {
+                    sb.Append(replacement);
+                } else {
+                    sb.Append(ch);
+                }
+            }
+
+            return sb.ToString();
+        }
+
+        public static void WaitAndReset(this ManualResetEventSlim e) {
+            e.Wait();
+            e.Reset();
         }
     }
 }

@@ -3,18 +3,35 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio Version 17
 VisualStudioVersion = 17.5.33530.505
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AiSync", "AiSync\AiSync.csproj", "{8158F870-8B9B-44D9-9ACC-9E0273C41561}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AiSync", "AiSync\AiSync.csproj", "{E10130D4-6B09-42DB-9C73-8DCFA1D7B979}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AiSyncClient", "AiSyncClient\AiSyncClient.csproj", "{FEC83452-D818-4566-8D67-5E7E1BF2CC5D}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AiSyncServer", "AiSyncServer\AiSyncServer.csproj", "{049B8124-39A2-4C18-BA5E-398AA8834245}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
 		Debug|x64 = Debug|x64
+		Release|Any CPU = Release|Any CPU
 		Release|x64 = Release|x64
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{8158F870-8B9B-44D9-9ACC-9E0273C41561}.Debug|x64.ActiveCfg = Debug|x64
-		{8158F870-8B9B-44D9-9ACC-9E0273C41561}.Debug|x64.Build.0 = Debug|x64
-		{8158F870-8B9B-44D9-9ACC-9E0273C41561}.Release|x64.ActiveCfg = Release|x64
-		{8158F870-8B9B-44D9-9ACC-9E0273C41561}.Release|x64.Build.0 = Release|x64
+		{E10130D4-6B09-42DB-9C73-8DCFA1D7B979}.Debug|Any CPU.ActiveCfg = Debug|x64
+		{E10130D4-6B09-42DB-9C73-8DCFA1D7B979}.Debug|x64.ActiveCfg = Debug|x64
+		{E10130D4-6B09-42DB-9C73-8DCFA1D7B979}.Debug|x64.Build.0 = Debug|x64
+		{E10130D4-6B09-42DB-9C73-8DCFA1D7B979}.Release|Any CPU.ActiveCfg = Release|x64
+		{E10130D4-6B09-42DB-9C73-8DCFA1D7B979}.Release|x64.ActiveCfg = Release|x64
+		{FEC83452-D818-4566-8D67-5E7E1BF2CC5D}.Debug|Any CPU.ActiveCfg = Debug|x64
+		{FEC83452-D818-4566-8D67-5E7E1BF2CC5D}.Debug|x64.ActiveCfg = Debug|x64
+		{FEC83452-D818-4566-8D67-5E7E1BF2CC5D}.Debug|x64.Build.0 = Debug|x64
+		{FEC83452-D818-4566-8D67-5E7E1BF2CC5D}.Release|Any CPU.ActiveCfg = Release|x64
+		{FEC83452-D818-4566-8D67-5E7E1BF2CC5D}.Release|x64.ActiveCfg = Release|x64
+		{049B8124-39A2-4C18-BA5E-398AA8834245}.Debug|Any CPU.ActiveCfg = Debug|x64
+		{049B8124-39A2-4C18-BA5E-398AA8834245}.Debug|x64.ActiveCfg = Debug|x64
+		{049B8124-39A2-4C18-BA5E-398AA8834245}.Debug|x64.Build.0 = Debug|x64
+		{049B8124-39A2-4C18-BA5E-398AA8834245}.Release|Any CPU.ActiveCfg = Release|x64
+		{049B8124-39A2-4C18-BA5E-398AA8834245}.Release|x64.ActiveCfg = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
