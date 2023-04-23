@@ -5,8 +5,9 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:AiSyncClient"
         xmlns:vlc="clr-namespace:LibVLCSharp.WPF;assembly=LibVLCSharp.WPF"
-        mc:Ignorable="d"
-        x:Name="Window" FontSize="13" PreviewMouseWheel="Video_PreviewMouseWheel"
+        mc:Ignorable="d" Loaded="Window_Loaded" Closed="ClientWindow_Closed" PreviewKeyDown="General_PreviewKeyDown"
+        FontSize="13" PreviewMouseWheel="Volume_PreviewMouseWheel"
+        x:Name="Window"
         Title="AiSync Client" Height="640" Width="960">
     <Grid x:Name="MainGrid">
         <Grid.RowDefinitions>
@@ -14,13 +15,61 @@
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <vlc:VideoView x:Name="Video" Grid.Row="0" Panel.ZIndex="0" Background="Black"
-                       
-                       MouseDoubleClick="Video_MouseDoubleClick">
+        <vlc:VideoView x:Name="Video" Grid.Row="0" Background="Black" Loaded="Video_Loaded">
+            <Grid x:Name="VideoInteraction" Background="#01FFFFFF" PreviewMouseWheel="Volume_PreviewMouseWheel"
+                  KeyDown="General_PreviewKeyDown" MouseMove="VideoInteraction_MouseMove"
+                  MouseEnter="VideoInteraction_MouseEnter" MouseLeave="VideoInteraction_MouseLeave" MouseDown="VideoInteraction_MouseDown">
 
+                <Grid MaxWidth="800">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+
+                    <Border x:Name="FullScreenControls" Grid.Row="1" Margin="0 0 0 10" Padding="15 5 15 5"
+                            Background="#BBFFFFFF" Visibility="Collapsed">
+                        <Grid Opacity="0.85" Margin="10 5 10 5">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock x:Name="FullscreenCurrentPosition" Grid.Column="0"
+                                VerticalAlignment="Center" Text="--:--"/>
+                            <local:AiSlider x:Name="FullscreenScrubber" Grid.Column="1" VerticalAlignment="Center" Margin="10 0 0 0"  Formatter="AutoToolTipFormatter"
+                                            Minimum="0" Maximum="1" AutoToolTipPlacement="TopLeft"
+                                            Thumb.DragStarted="Scrubber_DragStarted" Thumb.DragCompleted="Scrubber_DragCompleted"/>
+                            <TextBlock x:Name="FullscreenDuration" Grid.Column="2" Margin="10 0 0 0"
+                                VerticalAlignment="Center" Text="--:--"/>
+
+                            <Button x:Name="ExitFullscreen" Grid.Column="3"
+                                    HorizontalAlignment="Left" VerticalAlignment="Center" Margin="10 0 0 0"
+                                    IsEnabledChanged="ImageButton_IsEnabledChanged" Click="ExitFullscreen_Click">
+                                <Image x:Name="ExitFullscreenImage" Width="24" Height="24" Source="icons8-exit-fullscreen.png"/>
+                            </Button>
+
+                            <Button x:Name="FullscreenPlayPause" Grid.Column="4" IsEnabledChanged="ImageButton_IsEnabledChanged"
+                                HorizontalAlignment="Left" VerticalAlignment="Center" Margin="10 0 0 0"
+                                Click="PlayPause_Click">
+                                <Image x:Name="FullscreenPlayPauseImage" Width="24" Height="24" Source="icons8-play.png"/>
+                            </Button>
+
+                            <TextBlock x:Name="FullscreenVolumeDisplay" Grid.Column="5" VerticalAlignment="Center" Margin="10 0 0 0"
+                                TextAlignment="Right" Text="100%"/>
+                            <Slider x:Name="FullscreenVolume" Grid.Column="6" Width="100" VerticalAlignment="Center" Margin="10 0 0 0"
+                                    Minimum="0" Maximum="100" SmallChange="5" LargeChange="25" Value="100" ValueChanged="Volume_ValueChanged"/>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </Grid>
         </vlc:VideoView>
 
-        <Grid x:Name="ControlGrid" Grid.Row="1" Panel.ZIndex="1">
+        <Grid x:Name="ControlGrid" Grid.Row="1" Panel.ZIndex="1" Margin="10 5 10 5">
             <Grid.RowDefinitions>
                 <RowDefinition Height="*"/>
                 <RowDefinition Height="Auto"/>
@@ -28,21 +77,24 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
             
-            <Grid x:Name="ScrubberGrid" Grid.Row="0" Margin="0 5 0 5">
+            <Grid x:Name="ScrubberGrid" Grid.Row="0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
 
-                <TextBlock x:Name="CurrentPosition" Grid.Column="0" Margin="15 0 5 0" VerticalAlignment="Center" Text="--:--"/>
-                <local:AiSlider x:Name="Scrubber" Grid.Column="1" VerticalAlignment="Center" Minimum="0" Maximum="1"
-                            AutoToolTipPlacement="TopLeft" Thumb.DragStarted="Scrubber_DragStarted"
-                            Thumb.DragDelta="Scrubber_DragDelta" Thumb.DragCompleted="Scrubber_DragCompleted"/>
-                <TextBlock x:Name="Duration" Grid.Column="2" VerticalAlignment="Center" Margin="5 0 15 0" Text="--:--"/>
+                <TextBlock x:Name="CurrentPosition" Grid.Column="0"
+                           VerticalAlignment="Center" Text="--:--"/>
+                
+                <local:AiSlider x:Name="Scrubber" Grid.Column="1" VerticalAlignment="Center"
+                                Minimum="0" Maximum="1" Margin="10 0 10 0" Formatter="AutoToolTipFormatter"
+                                AutoToolTipPlacement="TopLeft"
+                                Thumb.DragStarted="Scrubber_DragStarted" Thumb.DragCompleted="Scrubber_DragCompleted"/>
+                <TextBlock x:Name="Duration" Grid.Column="2" VerticalAlignment="Center" Text="--:--"/>
             </Grid>
             
-            <Grid x:Name="ParameterGrid" Grid.Row="1" Margin="10 0 10 10">
+            <Grid x:Name="ParameterGrid" Grid.Row="1" Margin="0 5 0 0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
@@ -50,35 +102,40 @@
                 </Grid.ColumnDefinitions>
 
                 <StackPanel x:Name="InputParameters" Orientation="Horizontal" Grid.Column="0">
-                    <TextBlock x:Name="AddressText" VerticalAlignment="Center" Margin="0 0 10 0" Text="Address:"/>
-                    <TextBox x:Name="Address" VerticalAlignment="Center" Margin="0 0 10 0"
-                         TextAlignment="Left" Width="256" Text="127.0.0.1" TextChanged="Address_TextChanged"/>
+                    <TextBlock x:Name="AddressText" VerticalAlignment="Center" Text="Address:"/>
+                    <TextBox x:Name="Address" VerticalAlignment="Center" Margin="10 0 0 0"
+                         TextAlignment="Left" Width="256" Text="127.0.0.1" TextChanged="TextInput_TextChanged"/>
 
-                    <TextBlock x:Name="CommPortText" VerticalAlignment="Center" Margin="0 0 10 0" Text="Comms port:" />
-                    <TextBox x:Name="CommPort" VerticalAlignment="Center" Width="48" Margin="0 0 10 0"
+                    <TextBlock x:Name="CommPortText" VerticalAlignment="Center" Margin="10 0 0 0" Text="Comms port:" />
+                    <TextBox x:Name="CommPort" VerticalAlignment="Center" Width="48" Margin="10 0 0 0"
                          Text="26980" TextAlignment="Center" MaxLength="5"
-                         TextChanged="Port_TextChanged" PreviewTextInput="Port_PreviewTextInput"/>
+                         TextChanged="TextInput_TextChanged" PreviewTextInput="Port_PreviewTextInput"/>
 
-                    <TextBlock x:Name="DataPortText" VerticalAlignment="Center" Margin="0 0 10 0" Text="Data port:" />
-                    <TextBox x:Name="DataPort" VerticalAlignment="Center" Width="48" Margin="0 0 10 0"
+                    <TextBlock x:Name="DataPortText" VerticalAlignment="Center" Margin="10 0 0 0" Text="Data port:" />
+                    <TextBox x:Name="DataPort" VerticalAlignment="Center" Width="48" Margin="10 0 0 0"
                          Text="28524" TextAlignment="Center" MaxLength="5"
-                         TextChanged="Port_TextChanged" PreviewTextInput="Port_PreviewTextInput"/>
+                         TextChanged="TextInput_TextChanged" PreviewTextInput="Port_PreviewTextInput"/>
 
-                    <TextBlock VerticalAlignment="Center" Margin="0 0 10 0" Text="Local controls:"/>
-                    <CheckBox x:Name="LocalControls" Margin="0 0 10 0" VerticalAlignment="Center" IsEnabled="False"/>
+                    <TextBlock VerticalAlignment="Center" Margin="10 0 0 0" Text="Local controls:"/>
+                    <CheckBox x:Name="LocalControls" Margin="10 0 0 0" VerticalAlignment="Center" IsEnabled="False"/>
                 </StackPanel>
 
                 <StackPanel x:Name="ControlParameters" Orientation="Horizontal" Grid.Column="2">
-                    <Button x:Name="PlayPause" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="0 0 10 0" Click="PlayPause_Click">
+                    <Button x:Name="EnterFullscreen" VerticalAlignment="Center" IsEnabledChanged="ImageButton_IsEnabledChanged"
+                            Click="EnterFullscreen_Click">
+                        <Image x:Name="EnterFullscreenImage" Width="24" Height="24" Source="icons8-fullscreen.png"/>
+                    </Button>
+
+                    <Button x:Name="PlayPause" Margin="10 0 0 0" VerticalAlignment="Center" Click="PlayPause_Click" IsEnabledChanged="ImageButton_IsEnabledChanged">
                         <Image x:Name="PlayPauseImage" Width="24" Height="24" Source="icons8-play.png"/>
                     </Button>
 
-                    <TextBlock x:Name="VolumeDisplay" VerticalAlignment="Center" Margin="0 0 10 0" TextAlignment="Right" Text="100%"/>
-                    <Slider x:Name="Volume" Width="100" VerticalAlignment="Center" Margin="0 0 10 0"  Minimum="0" Maximum="100" Value="100"
-                        SmallChange="5" LargeChange="25" ValueChanged="Volume_ValueChanged" PreviewMouseWheel="Volume_PreviewMouseWheel"/>
+                    <TextBlock x:Name="VolumeDisplay" VerticalAlignment="Center" Margin="10 0 0 0" TextAlignment="Right" Text="100%"/>
+                    <Slider x:Name="Volume" Width="100" VerticalAlignment="Center" Margin="10 0 0 0"  Minimum="0" Maximum="100" Value="100"
+                        SmallChange="5" LargeChange="25" ValueChanged="Volume_ValueChanged"/>
                 </StackPanel>
             </Grid>
-            <Grid x:Name="ButtonGrid" Grid.Row="2" Margin="10 0 10 10">
+            <Grid x:Name="ButtonGrid" Grid.Row="2" Margin="0 5 0 0">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
@@ -86,10 +143,10 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <Button x:Name="Connect" Grid.Column="0" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0 0 10 0" Padding="2" Content="Connect" Click="Connect_Click"/>
-                <Button x:Name="Disconnect" Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="0 0 10 0" Padding="2" Content="Disconnect" Click="Disconnect_Click"/>
-                <TextBlock x:Name="LastAction" Grid.Column="2" VerticalAlignment="Center" Margin="0 0 10 0"/>
-                <TextBlock x:Name="ServerStatus" Grid.Column="4" VerticalAlignment="Center" Margin="0 0 10 0"/>
+                <Button x:Name="Connect" Grid.Column="0" HorizontalAlignment="Center" VerticalAlignment="Center" Padding="2" Content="Connect" Click="Connect_Click"/>
+                <Button x:Name="Disconnect" Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="10 0 0 0" Padding="2" Content="Disconnect" Click="Disconnect_Click"/>
+                <TextBlock x:Name="LastAction" Grid.Column="2" VerticalAlignment="Center" Margin="10 0 0 0"/>
+                <TextBlock x:Name="ServerStatus" Grid.Column="4" VerticalAlignment="Center"/>
             </Grid>
         </Grid>
         

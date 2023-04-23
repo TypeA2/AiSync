@@ -11,6 +11,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="icons8-exit-fullscreen-disabled.png" />
+    <None Remove="icons8-exit-fullscreen.png" />
+    <None Remove="icons8-fullscreen-disabled.png" />
+    <None Remove="icons8-fullscreen.png" />
     <None Remove="icons8-pause-disabled.png" />
     <None Remove="icons8-pause.png" />
     <None Remove="icons8-play-disabled.png" />
@@ -37,6 +41,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Resource Include="icons8-exit-fullscreen-disabled.png" />
+    <Resource Include="icons8-exit-fullscreen.png" />
+    <Resource Include="icons8-fullscreen-disabled.png" />
+    <Resource Include="icons8-fullscreen.png" />
     <Resource Include="icons8-pause-disabled.png" />
     <Resource Include="icons8-pause.png" />
     <Resource Include="icons8-play-disabled.png" />
