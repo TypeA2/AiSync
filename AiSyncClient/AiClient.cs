@@ -68,6 +68,7 @@ namespace AiSyncClient {
 
         public void Dispose() {
             client.Dispose();
+            sync_wait.Dispose();
             GC.SuppressFinalize(this);
         }
 

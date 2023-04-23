@@ -1,23 +1,24 @@
-﻿using System.Windows;
-using System;
+﻿using AiSync;
+
+using LibVLCSharp.WPF;
 using LibVLCSharp.Shared;
+
+using System;
+using System.Windows;
 using System.Windows.Input;
 using System.Windows.Controls;
 using System.Text.RegularExpressions;
 using System.Net;
 using System.Windows.Controls.Primitives;
-using System.Diagnostics;
 using System.Threading.Tasks;
-using System.Threading;
 using System.Reflection;
-using LibVLCSharp.WPF;
-using AiSync;
 
 namespace AiSyncClient {
     public partial class ClientWindow {
         #region Disposal
         private void ClientWindow_Closed(object? sender, EventArgs e) {
-            _player?.Dispose();
+            /* Also disposes the Media instance */
+            Player?.Dispose();
             _vlc?.Dispose();
             _comm_client?.Dispose();
         }
@@ -43,6 +44,16 @@ namespace AiSyncClient {
 
             Player = new MediaPlayer(VLC);
 
+            Player.EndReached += (_, _) => Dispatcher.Invoke(() => {
+                Media?.Dispose();
+                SetNoMedia();
+            });
+
+            Player.PositionChanged += (_, _) => Dispatcher.Invoke(UpdateCurrentPosition);
+            Player.Playing += (_, _) => Dispatcher.Invoke(UpdateImages);
+            Player.Paused += (_, _) => Dispatcher.Invoke(UpdateImages);
+            Player.Stopped += (_, _) => Dispatcher.Invoke(UpdateImages);
+
             Video.MediaPlayer = Player;
 
             /* Hack to get keyboard input for the ForegroundWindow as well */
@@ -59,30 +70,30 @@ namespace AiSyncClient {
             fgwin.PreviewKeyDown += General_PreviewKeyDown;
         }
 
-
         private void ImageButton_IsEnabledChanged(object sender, DependencyPropertyChangedEventArgs e) {
             UpdateImages();
         }
 
         private async void Disconnect_Click(object sender, RoutedEventArgs e) {
-            Player.Position = 0.975f;
             LockUI(true);
 
-            if (playing) {
-                await Task.Run(Player.Stop);
+            if (HasMedia) {
+                if (Player.IsPlaying) {
+                    await Task.Run(Player.Stop);
+                }
+
+                /* Dispose media but keep player alive */
+                Media.Dispose();
             }
 
-            PlaybackEnded();
+            SetNoMedia();
 
             CommClient.Disconnect();
             CommClient.Dispose();
 
             LastAction.Text = "Disconnect from server";
 
-            CommPort.IsEnabled = true;
-            DataPort.IsEnabled = true;
-            Address.IsEnabled = true;
-            Connect.IsEnabled = true;
+            SetPreConnect();
         }
 
         #endregion
@@ -120,14 +131,19 @@ namespace AiSyncClient {
                 }
             });
 
-            CommClient.UpdateStatus += (_, _) => Dispatcher.Invoke(() =>
-                CommClient.SetStatus(Player.IsPlaying,Player.PositionMs()));
+            CommClient.UpdateStatus += (_, _) => Dispatcher.Invoke(() => {
+                if (HasMedia) {
+                    CommClient.SetStatus(Player.IsPlaying, Player.PositionMs());
+                } else {
+                    CommClient.SetStatus(false, 0);
+                }
+            });
 
             bool connected = await CommClient.Connect();
 
             if (connected) {
                 LastAction.Text = "Connected to server";
-                SetDefaulPlayback();
+                SetNoMedia();
             } else {
                 LastAction.Text = "Failed to connect to server";
                 SetPreConnect();
@@ -166,8 +182,6 @@ namespace AiSyncClient {
             scrubbing = false;
         }
 
-        bool yes = false;
-
         private void VideoInteraction_MouseDown(object sender, MouseButtonEventArgs e) {
             if (e.ClickCount == 2) {
                 SetFullscreen(!fullscreen);
@@ -181,11 +195,18 @@ namespace AiSyncClient {
         }
 
         private void CommClient_PausePlay(PausePlayEventArgs e) {
+            if (!HasMedia) {
+                /* What, how */
+                return;
+            }
+
             /* Adjust position to sync with other clients if we're too far out of sync */
             long diff = Player.PositionMs().Difference(e.Position);
             TimeSpan? adjust = (diff > CommClient.CloseEnoughValue)
                 ? TimeSpan.FromMilliseconds(e.Position) : null;
-            if (e.IsPlaying && !playing && HasMedia) {
+
+            if (e.IsPlaying && !Player.IsPlaying) {
+                /* Set to playing */
                 if (adjust is not null) {
                     if (e.Position > Player.PositionMs()) {
                         LastAction.Text = $"Server seek forward by {diff} ms and play";
@@ -199,11 +220,10 @@ namespace AiSyncClient {
                 }
 
                 Player.Play();
-                playing = true;
 
-            } else if (playing) {
+            } else if (Player.IsPlaying) {
+                /* Set to paused */
                 Player.Pause();
-                playing = false;
 
                 if (adjust is not null) {
                     if (e.Position > Player.PositionMs()) {
@@ -220,7 +240,6 @@ namespace AiSyncClient {
 
             PlayPause.IsEnabled = true;
             FullscreenPlayPause.IsEnabled = true;
-            UpdateImages();
         }
 
         private void VideoInteraction_MouseEnter(object sender, MouseEventArgs e) {

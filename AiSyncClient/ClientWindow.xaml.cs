@@ -5,15 +5,12 @@ using LibVLCSharp.Shared;
 using Microsoft.Extensions.Logging;
 
 using System;
-using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Net;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -38,20 +35,14 @@ namespace AiSyncClient {
         private LibVLC? _vlc;
         private LibVLC VLC { get => _vlc ??= new(); }
 
-        private LibVLCSharp.Shared.MediaPlayer? _player;
+        private LibVLCSharp.Shared.MediaPlayer? Player { get; set; } = null;
 
-        private LibVLCSharp.Shared.MediaPlayer Player {
-            get => _player ?? throw new InvalidOperationException("No player is opened");
-            set => _player = value;
+        private Media? Media {
+            get => Player?.Media;
         }
 
-        private Media Media {
-            get => Player.Media ?? throw new InvalidOperationException("No media is set");
-            set => Player.Media = value;
-        }
-
-        [MemberNotNullWhen(returnValue: true, nameof(_player), nameof(Player), nameof(Media))]
-        private bool HasMedia => _player != null && _player.Media != null;
+        [MemberNotNullWhen(returnValue: true, nameof(Player), nameof(Media))]
+        private bool HasMedia => Player != null && Media != null;
 
         private AiClient? _comm_client;
         private AiClient CommClient {
@@ -59,7 +50,6 @@ namespace AiSyncClient {
             set => _comm_client = value;
         }
 
-        private bool playing = false;
         private bool scrubbing = false;
 
         private readonly object hide_ui_lock = new();
@@ -80,7 +70,7 @@ namespace AiSyncClient {
         }
 
         private string AutoToolTipFormatter(double pos) {
-            if (_player is null || Player.Media is null) {
+            if (!HasMedia) {
                 return "(unknown)";
             }
 
@@ -105,7 +95,11 @@ namespace AiSyncClient {
         }
 
         private void UpdateImages() {
-            if (playing) {
+            if (!HasMedia) {
+                return;
+            }
+
+            if (Player.IsPlaying) {
                 ImageSource src = PlayPause.IsEnabled ? pause_image : pause_disabled_image;
                 PlayPauseImage.Source = src;
                 FullscreenPlayPauseImage.Source = src;
@@ -132,16 +126,6 @@ namespace AiSyncClient {
                 Scrubber.Value = Player.Position;
                 FullscreenScrubber.Value = Player.Position;
             }
-        }
-
-        private void PlaybackEnded() {
-            playing = false;
-
-            CurrentPosition.Text = "--:--";
-            Duration.Text = "--:--";
-            Scrubber.Value = 0;
-
-            PlayPause.IsEnabled = false;
         }
 
         private void CancelFullscreenTimeout() {
@@ -195,7 +179,6 @@ namespace AiSyncClient {
                     lock (hide_ui_lock) {
                         hide_ui_sleep -= sleep_for;
                         if (hide_ui_sleep <= 0) {
-                            var elapsed = (DateTime.Now - hide_ui_last_start).TotalMilliseconds;
                             if (!hide_ui_cancelled) {
                                 Dispatcher.Invoke(() => {
                                     if (!FullScreenControls.IsMouseOver) {
@@ -203,10 +186,6 @@ namespace AiSyncClient {
                                         VideoInteraction.Cursor = Cursors.None;
                                     }
                                 });
-
-                                Trace.WriteLine($"Yes after: {elapsed}");
-                            } else {
-                                Trace.WriteLine($"No after: {elapsed}");
                             }
 
                             hide_ui_running = false;
@@ -217,14 +196,21 @@ namespace AiSyncClient {
             });
         }
 
-        private string GetTimeString() => GetTimeString(Player.PositionMs());
+        private string GetTimeString() {
+            return HasMedia ? GetTimeString(Player.PositionMs()) : "--:--";
+        }
 
-        private string GetTimeString(float pos) => GetTimeString((long)Math.Round(pos * (Player.Media?.Duration ?? 0)));
+        private string GetTimeString(float pos) {
+            return HasMedia ? GetTimeString((long)Math.Round(pos * Media.Duration)) : "--:--";
+        }
 
-        private string GetTimeString(double pos) => GetTimeString((long)Math.Round(pos * (Player.Media?.Duration ?? 0)));
+        private string GetTimeString(double pos) {
+            return HasMedia ? GetTimeString((long)Math.Round(pos * Media.Duration)) : "--:--";
+        }
 
-        private string GetTimeString(long pos)
-            => AiSync.Utils.FormatTime(pos, false, (Player.Media?.Duration ?? 0) >= (3600 * 1000));
+        private string GetTimeString(long pos) {
+            return AiSync.Utils.FormatTime(pos, false, (HasMedia ? Media.Duration : 0) >= (3600 * 1000));
+        }
 
 
         private bool fullscreen = false;
@@ -239,6 +225,19 @@ namespace AiSyncClient {
             CommPort.IsEnabled = true;
             DataPort.IsEnabled = true;
             Connect.IsEnabled = true;
+        }
+
+        private void SetNoMedia() {
+            LockUI(true);
+            Disconnect.IsEnabled = true;
+
+            FullscreenCurrentPosition.Text = "--:--";
+            FullscreenDuration.Text = "--:--";
+            FullscreenScrubber.Value = 0;
+
+            CurrentPosition.Text = "--:--";
+            Duration.Text = "--:--";
+            Scrubber.Value = 0;
         }
 
         private void SetDefaulPlayback() {
@@ -283,18 +282,22 @@ namespace AiSyncClient {
         private void LockUI(bool locked) {
             bool new_state = !locked;
 
+            /* Disabling these is kind of pointless */
+            // ExitFullscreen.IsEnabled = new_state;
+            // EnterFullscreen.IsEnabled = new_state;
+
+            /* Same for these, these are client-side only */
+            // FullscreenVolume.IsEnabled = new_state;
+            // Volume.IsEnabled = new_state;
+
             FullscreenScrubber.IsEnabled = new_state;
-            ExitFullscreen.IsEnabled = new_state;
             FullscreenPlayPause.IsEnabled = new_state;
-            FullscreenVolume.IsEnabled = new_state;
 
             Scrubber.IsEnabled = new_state;
             Address.IsEnabled = new_state;
             CommPort.IsEnabled = new_state;
             DataPort.IsEnabled = new_state;
-            EnterFullscreen.IsEnabled = new_state;
             PlayPause.IsEnabled = new_state;
-            Volume.IsEnabled = new_state;
 
             Connect.IsEnabled = new_state;
             Disconnect.IsEnabled = new_state;
@@ -327,22 +330,21 @@ namespace AiSyncClient {
             }
 
             if (LocalControls.IsChecked ?? false) {
-                if (playing) {
+                if (Player.IsPlaying) {
                     LastAction.Text = "Local pause";
                     Player.Pause();
                 } else {
                     LastAction.Text = "Local play";
                     Player.Play();
                 }
-                playing = !playing;
-                UpdateImages();
+                
                 return;
             }
 
             PlayPause.IsEnabled = false;
             FullscreenPlayPause.IsEnabled = false;
 
-            if (playing) {
+            if (Player.IsPlaying) {
                 LastAction.Text = $"Request pause at {GetTimeString()}";
                 CommClient.RequestPause(Player.PositionMs());
             } else {
@@ -406,6 +408,10 @@ namespace AiSyncClient {
         }
 
         private async void LoadMedia() {
+            if (Player is null) {
+                throw new InvalidOperationException("Attempted to load media for null player");
+            }
+
             Player.Media = new Media(VLC, $"http://{Address.Text}:{DataPort.Text}/", FromType.FromLocation);
 
             Player.Media.DurationChanged +=
@@ -416,12 +422,6 @@ namespace AiSyncClient {
                         UpdateCurrentPosition();
                     });
 
-            Player.PositionChanged +=
-                (_, _) => Dispatcher.Invoke(UpdateCurrentPosition);
-
-            Player.EndReached +=
-                (_, _) => Dispatcher.Invoke(PlaybackEnded);
-
             await Player.Media.Parse(MediaParseOptions.ParseNetwork);
 
             Player.Volume = (int)Math.Round(Volume.Value);
@@ -430,6 +430,7 @@ namespace AiSyncClient {
             ServerStatus.Text = "New media";
 
             CommClient.FileParsed();
+            SetDefaulPlayback();
         }
     }
 }
