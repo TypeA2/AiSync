@@ -119,6 +119,11 @@ namespace AiSyncServer {
                 server.Stop();
             }
 
+            if (!cancel_poll.IsCancellationRequested) {
+                cancel_poll.Cancel();
+                poll_thread?.Join();
+            }
+
             server.Dispose();
             cancel_poll.Dispose();
         }
@@ -128,11 +133,67 @@ namespace AiSyncServer {
             server.Start();
         }
 
-        public void StopPlayback() {
-            _logger.LogInformation("Stopping playback");
+        public void Stop() {
             has_file = false;
             cancel_poll.Cancel();
             poll_thread?.Join();
+        }
+
+        public async void Play(long pos) {
+            lock (control_lock) {
+                if (Playing) {
+                    /* Ignore if already playing */
+                    return;
+                }
+
+                Playing = true;
+
+                PlayingChanged?.Invoke(this, new PlayingChangedEventArgs(Playing));
+            }
+
+            AiServerRequestsPlay new_msg = new() { Position = pos };
+
+            await Task.WhenAll(Clients.Select(guid => SendMessage(guid, new_msg)).ToArray());
+
+            Position = pos;
+        }
+
+        public async void Pause(long pos) {
+            lock (control_lock) {
+                if (!Playing) {
+                    /* Ignore if not playing */
+                    return;
+                }
+
+                Playing = false;
+
+                PlayingChanged?.Invoke(this, new PlayingChangedEventArgs(Playing));
+            }
+
+            AiServerRequestsPause new_msg = new() { Position = pos };
+
+            await Task.WhenAll(Clients.Select(guid => SendMessage(guid, new_msg)).ToArray());
+
+            Position = pos;
+        }
+
+        public async void StopPlayback() {
+            if (!has_file) {
+                _logger.LogWarning("Attempt to stop playback with no file present");
+                return;
+            }
+
+            _logger.LogInformation("Stopping playback");
+            has_file = false;
+
+            lock (control_lock) {
+                Playing = false;
+
+                PlayingChanged?.Invoke(this, new PlayingChangedEventArgs(Playing));
+            }
+
+            AiFileClosed msg = new();
+            await Task.WhenAll(Clients.Select(guid => SendMessage(guid, msg)).ToArray());
         }
 
         public async void SetHasFile() {
@@ -166,7 +227,7 @@ namespace AiSyncServer {
             );
 
             /* Start status polling thread */
-            poll_thread = new Thread(PlaybackSyncPoll);
+            poll_thread = new Thread(() => PlaybackSyncPoll(cancel_poll.Token));
             poll_thread.Start();
         }
 
@@ -178,17 +239,39 @@ namespace AiSyncServer {
             public long delta;
         }
 
-        private async void PlaybackSyncPoll() {
-            const int poll_interval = 125;
-            const int sync_interval = 750;
+        private void PlaybackSyncPoll(CancellationToken ct) {
+            const int poll_interval = 100;
+            // const int sync_interval = 750;
 
             _logger.LogInformation("Starting polling thread");
 
-            long sleep_extra = 0;
+            Random rnd = new();
 
-            while (!cancel_poll.Token.IsCancellationRequested) {
+            DateTime start = DateTime.Now;
+            while (!ct.IsCancellationRequested) {
                 while (latest_start is null) {
                     Thread.Sleep(poll_interval);
+                    if (ct.IsCancellationRequested) {
+                        return;
+                    }
+                }
+
+                /* Add some randomness because it looks better */
+                Thread.Sleep(poll_interval - rnd.Next(0, 25));
+
+                TimeSpan elapsed = start - latest_start.Value;
+
+                PositionChanged?.Invoke(this, new PositionChangedEvent(Position));
+            }
+#if false
+            long sleep_extra = 0;
+
+            while (!ct.IsCancellationRequested) {
+                while (latest_start is null) {
+                    Thread.Sleep(poll_interval);
+                    if (ct.IsCancellationRequested) {
+                        return;
+                    }
                 }
 
                 DateTime start;
@@ -204,6 +287,10 @@ namespace AiSyncServer {
                     server_pos = Position;
 
                     PositionChanged?.Invoke(this, new PositionChangedEvent(Position));
+
+                    if (ct.IsCancellationRequested) {
+                        return;
+                    }
 
                     Thread.Sleep(poll_interval);
                 } while (elapsed.TotalMilliseconds < (sync_interval + sleep_extra));
@@ -280,6 +367,7 @@ namespace AiSyncServer {
                     sleep_extra = sync_interval;
                 }
             }
+#endif
         }
 
         private Resp SendAndExpectMsg<Msg, Resp>(int ms, Guid guid, Msg src)
@@ -320,7 +408,7 @@ namespace AiSyncServer {
             is_playing = false;
             position = 0;
             try {
-                AiClientStatus status = SendAndExpectMsg<AiServerRequestsStatus, AiClientStatus>(60 * 1000, guid, new());
+                AiClientStatus status = SendAndExpectMsg<AiServerRequestsStatus, AiClientStatus>(5 * 1000, guid, new());
 
                 is_playing = status.IsPlaying;
                 position = status.Position;
@@ -384,58 +472,42 @@ namespace AiSyncServer {
         }
 
         private SyncResponse OnSyncRequestReceived(SyncRequest req) {
-            _logger.LogWarning("Unexpected sync request from {}", req.Client.Guid);
-            return new SyncResponse(req, "hi from server");
+            string str = req.Data.ToUtf8();
+            AiMessageType type = str.AiJsonMessageType();
+
+            switch (type) {
+                case AiMessageType.GetStatus: {
+                    AiServerStatus status = new() {
+                        IsPlaying = Playing,
+                        Position = Position,
+                    };
+
+                    return req.ReplyWith(status);
+                }
+
+                default:
+                    throw new InvalidMessageException(str.AiDeserialize<AiProtocolMessage>());
+            }
         }
 
-        private async void HandleClientRequestsPause(AiClientRequestsPause msg) {
+        private void HandleClientRequestsPause(AiClientRequestsPause msg) {
             _logger.LogDebug("ClientRequestsPause: {}", msg.Position);
 
             long pos = (msg.Position < 0) ? Position : msg.Position; // Int64.Clamp(msg.Position, 0, Int64.MaxValue);
 
             _logger.LogInformation("Pause requested at {}", AiSync.Utils.FormatTime(pos));
 
-            lock (control_lock) {
-                if (!Playing) {
-                    /* Ignore if not playing */
-                    return;
-                }
-
-                Playing = false;
-
-                PlayingChanged?.Invoke(this, new PlayingChangedEventArgs(Playing));
-            }
-
-            AiServerRequestsPause new_msg = new() { Position = pos };
-
-            await Task.WhenAll(Clients.Select(guid => SendMessage(guid, new_msg)).ToArray());
-
-            Position = pos;
+            Pause(pos);
         }
 
-        private async void HandleClientRequestsPlay(AiClientRequestsPlay msg) {
+        private void HandleClientRequestsPlay(AiClientRequestsPlay msg) {
             _logger.LogDebug("ClientRequestsPlay: {}", msg.Position);
 
             long pos = (msg.Position < 0) ? Position : msg.Position; // Int64.Clamp(msg.Position, 0, Int64.MaxValue);
 
             _logger.LogInformation("Play requested at {}", AiSync.Utils.FormatTime(pos));
 
-            lock (control_lock) {
-                if (Playing) {
-                    /* Ignore if already playing */
-                    return;
-                }
-
-                Playing = true;
-
-                PlayingChanged?.Invoke(this, new PlayingChangedEventArgs(Playing));
-            }
-
-            AiServerRequestsPlay new_msg = new() { Position = pos };
-
-            await Task.WhenAll(Clients.Select(guid => SendMessage(guid, new_msg)).ToArray());
-
-            Position = pos;
+            Play(pos);
         }
 
         private async void HandleClientRequestsSeek(AiClientRequestSeek msg) {

@@ -5,6 +5,7 @@ using LibVLCSharp.Shared;
 using Microsoft.Extensions.Logging;
 
 using System;
+using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Threading;
@@ -35,14 +36,18 @@ namespace AiSyncClient {
         private LibVLC? _vlc;
         private LibVLC VLC { get => _vlc ??= new(); }
 
-        private LibVLCSharp.Shared.MediaPlayer? Player { get; set; } = null;
+        private LibVLCSharp.Shared.MediaPlayer? _player;
+        private LibVLCSharp.Shared.MediaPlayer Player {
+            get =>_player ?? throw new InvalidOperationException("No player set");
+            set => _player = value;
+         }
 
         private Media? Media {
             get => Player?.Media;
         }
 
-        [MemberNotNullWhen(returnValue: true, nameof(Player), nameof(Media))]
-        private bool HasMedia => Player != null && Media != null;
+        [MemberNotNullWhen(returnValue: true, nameof(Media))]
+        private bool HasMedia => _player != null && Media != null;
 
         private AiClient? _comm_client;
         private AiClient CommClient {
@@ -78,19 +83,21 @@ namespace AiSyncClient {
         }
 
         private void SetVolume(int new_val, Slider? source) {
-            if (HasMedia) {
-                Player.Volume = new_val;
-                FullscreenVolumeDisplay.Text = $"{new_val}%";
-                VolumeDisplay.Text = $"{new_val}%";
+            if (!Video.IsLoaded) {
+                return;
+            }
 
-                /* Update the other scrubber's value */
-                if (source != Volume) {
-                    Volume.Value = new_val;
-                }
+            Player.Volume = new_val;
+            FullscreenVolumeDisplay.Text = $"{new_val}%";
+            VolumeDisplay.Text = $"{new_val}%";
+
+            /* Update the other scrubber's value */
+            if (source != Volume) {
+                Volume.Value = new_val;
+            }
                 
-                if (source != FullscreenVolume) {
-                    FullscreenVolume.Value = new_val;
-                }
+            if (source != FullscreenVolume) {
+                FullscreenVolume.Value = new_val;
             }
         }
 
@@ -128,6 +135,22 @@ namespace AiSyncClient {
             }
         }
 
+        private async void CloseMedia() {
+            LockUI(true);
+
+            if (HasMedia) {
+                if (Player.IsPlaying) {
+                    await Task.Run(Player.Stop);
+                }
+
+                /* Dispose media but keep player alive */
+                Media.Dispose();
+                Player.Media = null;
+            }
+
+            SetNoMedia();
+        }
+
         private void CancelFullscreenTimeout() {
             lock (hide_ui_lock) {
                 if (hide_ui_running) {
@@ -138,8 +161,9 @@ namespace AiSyncClient {
 
             if (FullScreenControls.Visibility == Visibility.Collapsed) {
                 FullScreenControls.Visibility = Visibility.Visible;
-                VideoInteraction.Cursor = Cursors.Arrow;
             }
+
+            VideoInteraction.Cursor = Cursors.Arrow;
         }
 
         private void StartFullscreenTimeout() {
@@ -181,7 +205,7 @@ namespace AiSyncClient {
                         if (hide_ui_sleep <= 0) {
                             if (!hide_ui_cancelled) {
                                 Dispatcher.Invoke(() => {
-                                    if (!FullScreenControls.IsMouseOver) {
+                                    if (!FullScreenControls.IsMouseOver && fullscreen) {
                                         FullScreenControls.Visibility = Visibility.Collapsed;
                                         VideoInteraction.Cursor = Cursors.None;
                                     }
@@ -224,7 +248,6 @@ namespace AiSyncClient {
             Address.IsEnabled = true;
             CommPort.IsEnabled = true;
             DataPort.IsEnabled = true;
-            Connect.IsEnabled = true;
         }
 
         private void SetNoMedia() {
@@ -324,18 +347,18 @@ namespace AiSyncClient {
             Connect.IsEnabled = (comm_good && data_good && addr_good);
         }
 
-        private void TogglePlayback() {
+        private void SetPlaying(bool new_playing) {
             if (!HasMedia) {
                 return;
             }
 
             if (LocalControls.IsChecked ?? false) {
-                if (Player.IsPlaying) {
-                    LastAction.Text = "Local pause";
-                    Player.Pause();
-                } else {
+                if (new_playing) {
                     LastAction.Text = "Local play";
                     Player.Play();
+                } else {
+                    LastAction.Text = "Local pause";
+                    Player.Pause();
                 }
                 
                 return;
@@ -344,12 +367,12 @@ namespace AiSyncClient {
             PlayPause.IsEnabled = false;
             FullscreenPlayPause.IsEnabled = false;
 
-            if (Player.IsPlaying) {
-                LastAction.Text = $"Request pause at {GetTimeString()}";
-                CommClient.RequestPause(Player.PositionMs());
-            } else {
+            if (new_playing) {
                 LastAction.Text = $"Request play at {GetTimeString()}";
                 CommClient.RequestPlay(Player.PositionMs());
+            } else {
+                LastAction.Text = $"Request pause at {GetTimeString()}";
+                CommClient.RequestPause(Player.PositionMs());
             }
         }
 
@@ -374,7 +397,7 @@ namespace AiSyncClient {
             switch (key) {
                 case Key.Space:
                     if (PlayPause.IsEnabled) {
-                        TogglePlayback();
+                        SetPlaying(!Player.IsPlaying);
                         return true;
                     }
                     break;
@@ -421,6 +444,8 @@ namespace AiSyncClient {
                         FullscreenDuration.Text = duration_str;
                         UpdateCurrentPosition();
                     });
+
+            Player.PositionChanged += Player_PositionChanged;
 
             await Player.Media.Parse(MediaParseOptions.ParseNetwork);
 

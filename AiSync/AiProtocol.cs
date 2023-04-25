@@ -54,8 +54,10 @@ namespace AiSync {
 
         FileReady,
         FileParsed,
+        FileClosed,
 
         ServerReady,
+        ServerClosed,
 
         ClientRequestsPause,
         ServerRequestsPause,
@@ -68,6 +70,7 @@ namespace AiSync {
 
         ServerRequestsStatus,
 
+        GetStatus,
         ClientStatus,
         ServerStatus,
     }
@@ -134,9 +137,17 @@ namespace AiSync {
     [AiProtocolMessage(AiMessageType.FileParsed)]
     public class AiFileParsed : AiProtocolMessage { }
 
+    /* Close the current file, wait for new file */
+    [AiProtocolMessage(AiMessageType.FileClosed)]
+    public class AiFileClosed : AiProtocolMessage { }
+
     /* Server is ready, clients can begin control */
     [AiProtocolMessage(AiMessageType.ServerReady)]
     public class AiServerReady : AiProtocolMessage { }
+
+    /* Server shutting down */
+    [AiProtocolMessage(AiMessageType.ServerClosed)]
+    public class AiServerClosed : AiProtocolMessage { }
 
     /* Base class for messages with a position attachment */
     public class AiPositionMessage : AiProtocolMessage {
@@ -177,6 +188,9 @@ namespace AiSync {
 
     [AiProtocolMessage(AiMessageType.ServerRequestsStatus)]
     public class AiServerRequestsStatus : AiProtocolMessage { }
+
+    [AiProtocolMessage(AiMessageType.GetStatus)]
+    public class AiGetStatus : AiProtocolMessage { }
 
     /* Base class for status messages */
     public class AiStatusMessage : AiProtocolMessage {

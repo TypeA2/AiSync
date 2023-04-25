@@ -8,6 +8,7 @@ using System.Net.Sockets;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows;
 
 using WatsonTcp;
 
@@ -35,6 +36,7 @@ namespace AiSyncClient {
     internal class AiClient : IDisposable {
         public event EventHandler? GotFile;
         public event EventHandler? EnableControls;
+        public event EventHandler? CloseFile;
 
         public event EventHandler<PausePlayEventArgs>? PausePlay;
 
@@ -130,12 +132,33 @@ namespace AiSyncClient {
             _logger.LogInformation("Disconnected, reason: ", e.Reason);
         }
 
+        private Resp SendAndExpectMsg<Msg, Resp>(int ms, Msg src)
+            where Msg : AiProtocolMessage
+            where Resp : AiProtocolMessage {
+            SyncResponse response = client.SendAndWait(5 * 1000, src.Serialize());
+
+            return response.Data.ToUtf8().AiDeserialize<Resp>();
+        }
+
+        public AiServerStatus? GetStatus() {
+            try {
+                return SendAndExpectMsg<AiGetStatus, AiServerStatus>(1000, new AiGetStatus());
+            } catch (TimeoutException) {
+
+            } catch (InvalidMessageException) {
+
+            }
+
+            return null;
+        }
+
         private void MessageReceived(object? sender, MessageReceivedEventArgs e) {
             string str = e.Data.ToUtf8();
             AiMessageType type = str.AiJsonMessageType();
 
             Delegate handler = str.AiJsonMessageType() switch {
                 AiMessageType.ServerReady => HandleServerReady,
+                AiMessageType.FileClosed => HandleFileClosed,
                 AiMessageType.ServerRequestsPause => HandleServerRequestsPause,
                 AiMessageType.ServerRequestsPlay => HandleServerRequestsPlay,
                 AiMessageType.ServerRequestsSeek => HandleServerRequestsSeek,
@@ -199,6 +222,11 @@ namespace AiSyncClient {
             EnableControls?.Invoke(this, EventArgs.Empty);
         }
 
+        private void HandleFileClosed(AiFileClosed msg) {
+            _logger.LogInformation("Closing file");
+            CloseFile?.Invoke(this, EventArgs.Empty);
+        }
+
         private void HandleServerRequestsPause(AiServerRequestsPause msg) {
             _logger.LogInformation("Server requests pause at {}", AiSync.Utils.FormatTime(msg.Position));
             PausePlay?.Invoke(this, new PausePlayEventArgs(msg.Position, false));
@@ -207,7 +235,6 @@ namespace AiSyncClient {
         private void HandleServerRequestsPlay(AiServerRequestsPlay msg) {
             _logger.LogInformation("Server requests play at {}", AiSync.Utils.FormatTime(msg.Position));
             PausePlay?.Invoke(this, new PausePlayEventArgs(msg.Position, true));
-
         }
 
         private void HandleServerRequestsSeek(AiServerRequestSeek msg) {

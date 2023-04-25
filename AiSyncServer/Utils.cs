@@ -57,6 +57,14 @@ namespace AiSyncServer {
             return T.Parse(element.Text, null);
         }
 
+        public static SyncResponse ReplyWith<T>(this SyncRequest req) where T : AiProtocolMessage, new() {
+            return new SyncResponse(req, new T().Serialize());
+        }
+
+        public static SyncResponse ReplyWith<T>(this SyncRequest req, T msg) where T : AiProtocolMessage {
+            return new SyncResponse(req, msg.Serialize());
+        }
+
         public static bool TryParseText<T>(this TextBox element, out T val) where T : notnull, INumber<T> {
 #pragma warning disable CS8601 // Possible null reference assignment.
             return T.TryParse(element.Text, null, out val);

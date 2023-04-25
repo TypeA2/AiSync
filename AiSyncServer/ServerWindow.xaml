@@ -5,17 +5,17 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:AiSyncServer"
         mc:Ignorable="d" FontSize="13"
+        Loaded="ServerWindow_Loaded" Closed="ServerWindow_Closed"
         Title="AiSync Server" SizeToContent="WidthAndHeight" ResizeMode="CanMinimize">
-    <Grid>
+    <Grid Margin="10 5 10 5">
         <Grid.RowDefinitions>
-            <RowDefinition Height="*"/>
-            <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
             <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
         <Grid Grid.Row="0">
             <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
                 <RowDefinition Height="Auto"/>
@@ -30,61 +30,52 @@
                 <ColumnDefinition Width="*"/>
             </Grid.ColumnDefinitions>
 
-            <TextBlock Grid.Row="0" Grid.Column="0" Margin="5 5 5 0" VerticalAlignment="Center" HorizontalAlignment="Right" Text="Status:"/>
-            <TextBlock x:Name="Status" Grid.Row="0" Grid.Column="1" Margin="5 5 5 0" VerticalAlignment="Center" HorizontalAlignment="Left" Text="Inactive"/>
+            <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" HorizontalAlignment="Right" Text="Status:"/>
+            <TextBlock x:Name="Status" Grid.Row="0" Grid.Column="1" Margin="10 0 0 0" VerticalAlignment="Center" HorizontalAlignment="Left" Text="Inactive"/>
 
-            <TextBlock Grid.Row="1" Grid.Column="0" Margin="5 5 5 0" VerticalAlignment="Center" HorizontalAlignment="Right" Text="Clients connected:"/>
-            <TextBlock x:Name="ClientsConnected" Grid.Row="1" Grid.Column="1" Margin="5 5 5 0" VerticalAlignment="Center" HorizontalAlignment="Left" Text="0"/>
+            <TextBlock Grid.Row="1" Grid.Column="0" Margin="0 5 0 0" VerticalAlignment="Center" HorizontalAlignment="Right" Text="Clients connected:"/>
+            <TextBlock x:Name="ClientsConnected" Grid.Row="1" Grid.Column="1" Margin="10 5 0 0" VerticalAlignment="Center" HorizontalAlignment="Left" Text="0"/>
 
-            <TextBlock Grid.Row="2" Grid.Column="0" Margin="5 5 5 0" VerticalAlignment="Center" HorizontalAlignment="Right" Text="File selected:"/>
-            <TextBlock x:Name="FileSelected" Grid.Row="2" Grid.Column="1" Margin="5 5 5 0" VerticalAlignment="Center" HorizontalAlignment="Left" Text="(none)"/>
+            <TextBlock Grid.Row="2" Grid.Column="0" Margin="0 5 0 0" VerticalAlignment="Center" HorizontalAlignment="Right" Text="File selected:"/>
+            <TextBlock x:Name="FileSelected" Grid.Row="2" Grid.Column="1" Margin="10 5 0 0" VerticalAlignment="Center" HorizontalAlignment="Left" Text="(none)"/>
 
-            <TextBlock Grid.Row="3" Grid.Column="0" Margin="5 5 5 0" VerticalAlignment="Center" HorizontalAlignment="Right" Text="MIME:"/>
-            <TextBlock x:Name="FileMime" Grid.Row="3" Grid.Column="1" Margin="5 5 5 0" VerticalAlignment="Center" HorizontalAlignment="Left" Text="(none)"/>
+            <TextBlock Grid.Row="3" Grid.Column="0" Margin="0 5 0 0" VerticalAlignment="Center" HorizontalAlignment="Right" Text="MIME:"/>
+            <TextBlock x:Name="FileMime" Grid.Row="3" Grid.Column="1" Margin="10 5 0 0" VerticalAlignment="Center" HorizontalAlignment="Left" Text="(none)"/>
 
-            <!--
-            <TextBlock Grid.Row="3" Grid.Column="0" Margin="5 5 5 0" VerticalAlignment="Center" HorizontalAlignment="Right" Text="File hash:"/>
-            <TextBlock x:Name="FileHash" Grid.Row="3" Grid.Column="1" Margin="5 5 5 0" VerticalAlignment="Center" HorizontalAlignment="Left" Text="(none)"/>
-            -->
-            
-            <TextBlock Grid.Row="4" Grid.Column="0" Margin="5 5 5 0" VerticalAlignment="Center" HorizontalAlignment="Right" Text="Duration:"/>
-            <TextBlock x:Name="Duration" Grid.Row="4" Grid.Column="1" Margin="5 5 5 0" VerticalAlignment="Center" HorizontalAlignment="Left" Text="--:--"/>
+            <TextBlock Grid.Row="4" Grid.Column="0" Margin="0 5 0 0" VerticalAlignment="Center" HorizontalAlignment="Right" Text="Duration:"/>
+            <TextBlock x:Name="Duration" Grid.Row="4" Grid.Column="1" Margin="10 5 0 0" VerticalAlignment="Center" HorizontalAlignment="Left" Text="--:--"/>
 
-            <TextBlock Grid.Row="5" Grid.Column="0" Margin="5 5 5 0" VerticalAlignment="Center" HorizontalAlignment="Right" Text="Playback position:"/>
-            <TextBlock x:Name="CurrentPos" Grid.Row="5" Grid.Column="1" Margin="5 5 5 0" VerticalAlignment="Center" HorizontalAlignment="Left" Text="--:--"/>
+            <TextBlock Grid.Row="5" Grid.Column="0" Margin="0 5 0 0" VerticalAlignment="Center" HorizontalAlignment="Right" Text="Playback position:"/>
+            <TextBlock x:Name="CurrentPos" Grid.Row="5" Grid.Column="1" Margin="10 5 0 0" VerticalAlignment="Center" HorizontalAlignment="Left" Text="--:--"/>
 
-            <TextBlock Grid.Row="6" Grid.Column="0" Margin="5 5 5 0" VerticalAlignment="Center" HorizontalAlignment="Right" Text="Currently playing:"/>
-            <TextBlock x:Name="Playing" Grid.Row="6" Grid.Column="1" Margin="5 5 5 0" VerticalAlignment="Center" HorizontalAlignment="Left" Text="false"/>
-        </Grid>
-
-        <Grid Grid.Row="1" Margin="5" Visibility="Collapsed">
-            <ProgressBar x:Name="Progress" Height="24" VerticalAlignment="Center"/>
-            <TextBlock x:Name="ProgressText" VerticalAlignment="Center" HorizontalAlignment="Center"/>
-        </Grid>
-        
-        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Grid.Row="2" Margin="5">
-            <TextBlock x:Name="CommPortText" VerticalAlignment="Center" Margin="0 0 10 0" Text="Comms port:" />
-            <TextBox x:Name="CommPort" VerticalAlignment="Center" Width="48" Margin="0 0 10 0"
-                         Text="26980" TextAlignment="Center" MaxLength="5"
+            <TextBlock x:Name="CommPortText" Grid.Row="6" Grid.Column="0" Margin="0 5 0 0" VerticalAlignment="Center"  Text="Comms port:"
+                       HorizontalAlignment="Right"/>
+            <TextBox x:Name="CommPort" Grid.Row="6" Grid.Column="1" VerticalAlignment="Center" Width="48" Margin="10 5 0 0"
+                         Text="26980" TextAlignment="Center" MaxLength="5" HorizontalAlignment="Left"
                          TextChanged="Port_TextChanged" PreviewTextInput="Port_PreviewTextInput"/>
 
-            <TextBlock x:Name="DataPortText" VerticalAlignment="Center" Margin="0 0 10 0" Text="Data port:" />
-            <TextBox x:Name="DataPort" VerticalAlignment="Center" Width="48" Margin="0 0 10 0"
-                         Text="28524" TextAlignment="Center" MaxLength="5"
+            <TextBlock x:Name="DataPortText" Grid.Row="7" Grid.Column="0" Margin="0 5 0 0" VerticalAlignment="Center" Text="Data port:"
+                       HorizontalAlignment="Right"/>
+            <TextBox x:Name="DataPort" Grid.Row="7" Grid.Column="1" VerticalAlignment="Center" Width="48" Margin="10 5 0 0"
+                         Text="28524" TextAlignment="Center" MaxLength="5" HorizontalAlignment="Left"
                          TextChanged="Port_TextChanged" PreviewTextInput="Port_PreviewTextInput"/>
-        </StackPanel>
-        
-        <StackPanel Orientation="Horizontal" Grid.Row="3" Margin="5">
-            <Button x:Name="UploadFile" Margin="0 0 10 0" Click="UploadFile_Click">
+        </Grid>
+
+        <StackPanel Orientation="Horizontal" Grid.Row="1" Margin="0 5 0 0">
+            <Button x:Name="UploadFile" Click="UploadFile_Click" IsEnabledChanged="Button_IsEnabledChanged">
                 <Image x:Name="UploadFileImage" Width="24" Height="24" Source="icons8-upload.png"/>
             </Button>
 
-            <Button x:Name="Stop" Margin="0 0 10 0" Click="Stop_Click">
+            <Button x:Name="PlayPause" Margin="10 0 0 0" Click="PlayPause_Click" IsEnabledChanged="Button_IsEnabledChanged">
+                <Image x:Name="PlayPauseImage" Width="24" Height="24" Source="icons8-play.png"/>
+            </Button>
+
+            <Button x:Name="Stop" Margin="10 0 0 0" Click="Stop_Click" IsEnabledChanged="Button_IsEnabledChanged">
                 <Image x:Name="StopImage" Width="24" Height="24" Source="icons8-stop.png"/>
             </Button>
 
-            <Button x:Name="Start" VerticalAlignment="Center" Padding="2" Margin="0 0 10 0" Content="Start server" Click="Start_Click"/>
-            <Button x:Name="DisconnectAll" VerticalAlignment="Center" Padding="2" Margin="0 0 10 0" Content="Disconnect all clients"/>
+            <Button x:Name="StartServer" VerticalAlignment="Center" Padding="2" Margin="10 0 0 0" Content="Start server" Click="StartServer_Click"/>
+            <Button x:Name="StopServer" VerticalAlignment="Center" Padding="2" Margin="10 0 0 0" Content="Stop server" Click="StopServer_Click"/>
         </StackPanel>
     </Grid>
 </Window>

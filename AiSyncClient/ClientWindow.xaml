@@ -117,7 +117,7 @@
                          TextChanged="TextInput_TextChanged" PreviewTextInput="Port_PreviewTextInput"/>
 
                     <TextBlock VerticalAlignment="Center" Margin="10 0 0 0" Text="Local controls:"/>
-                    <CheckBox x:Name="LocalControls" Margin="10 0 0 0" VerticalAlignment="Center" IsEnabled="False"/>
+                    <CheckBox x:Name="LocalControls" Margin="10 0 0 0" VerticalAlignment="Center"/>
                 </StackPanel>
 
                 <StackPanel x:Name="ControlParameters" Orientation="Horizontal" Grid.Column="2">

@@ -11,6 +11,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <None Remove="icons8-pause-disabled.png" />
+    <None Remove="icons8-pause.png" />
+    <None Remove="icons8-play-disabled.png" />
+    <None Remove="icons8-play.png" />
     <None Remove="icons8-stop-disabled.png" />
     <None Remove="icons8-stop.png" />
     <None Remove="icons8-upload-disabled.png" />
@@ -38,6 +42,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Resource Include="icons8-pause-disabled.png" />
+    <Resource Include="icons8-pause.png" />
+    <Resource Include="icons8-play-disabled.png" />
+    <Resource Include="icons8-play.png" />
     <Resource Include="icons8-stop-disabled.png" />
     <Resource Include="icons8-stop.png" />
     <Resource Include="icons8-upload-disabled.png" />

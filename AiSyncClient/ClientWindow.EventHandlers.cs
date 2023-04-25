@@ -12,6 +12,7 @@ using System.Net;
 using System.Windows.Controls.Primitives;
 using System.Threading.Tasks;
 using System.Reflection;
+using System.Diagnostics;
 
 namespace AiSyncClient {
     public partial class ClientWindow {
@@ -74,18 +75,8 @@ namespace AiSyncClient {
             UpdateImages();
         }
 
-        private async void Disconnect_Click(object sender, RoutedEventArgs e) {
-            LockUI(true);
-
-            if (HasMedia) {
-                if (Player.IsPlaying) {
-                    await Task.Run(Player.Stop);
-                }
-
-                /* Dispose media but keep player alive */
-                Media.Dispose();
-            }
-
+        private void Disconnect_Click(object sender, RoutedEventArgs e) {
+            CloseMedia();
             SetNoMedia();
 
             CommClient.Disconnect();
@@ -118,6 +109,7 @@ namespace AiSyncClient {
 
             CommClient.GotFile += (_, _) => Dispatcher.Invoke(LoadMedia);
             CommClient.EnableControls += (_, _) => Dispatcher.Invoke(SetDefaulPlayback);
+            CommClient.CloseFile += (_, _) => Dispatcher.Invoke(CloseMedia);
 
             CommClient.PausePlay += (_, e) => Dispatcher.Invoke(() => CommClient_PausePlay(e));
 
@@ -163,7 +155,11 @@ namespace AiSyncClient {
         }
 
         private void PlayPause_Click(object sender, RoutedEventArgs e) {
-            TogglePlayback();
+            if (!HasMedia) {
+                return;
+            }
+
+            SetPlaying(!Player.IsPlaying);
         }
 
         private void Scrubber_DragStarted(object sender, DragStartedEventArgs e) {
@@ -189,9 +185,7 @@ namespace AiSyncClient {
         }
 
         private void Volume_PreviewMouseWheel(object sender, MouseWheelEventArgs e) {
-            if (HasMedia && (Volume.IsEnabled || FullscreenVolume.IsEnabled)) {
-                Volume.Value += Volume.SmallChange * (e.Delta < 0 ? -1 : 1);
-            }
+            Volume.Value += Volume.SmallChange * (e.Delta < 0 ? -1 : 1);
         }
 
         private void CommClient_PausePlay(PausePlayEventArgs e) {
@@ -270,6 +264,17 @@ namespace AiSyncClient {
 
         private void EnterFullscreen_Click(object sender, RoutedEventArgs e) {
             SetFullscreen(true);
+        }
+
+        private void Player_PositionChanged(object? sender, MediaPlayerPositionChangedEventArgs e) {
+            AiServerStatus? status = CommClient.GetStatus();
+
+            if (status is null) {
+                SetPlaying(false);
+                return;
+            }
+
+            Trace.WriteLine($"Delta: {status.Position.Difference(Player.PositionMs())}");
         }
         #endregion
     }

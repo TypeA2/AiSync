@@ -13,6 +13,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Controls;
 using System.Windows.Media.Imaging;
+using System.Diagnostics.CodeAnalysis;
 
 using Microsoft.Extensions.Logging;
 
@@ -23,29 +24,34 @@ namespace AiSyncServer {
         private static readonly ImageSource upload_image = ReadImage("icons8-upload.png");
         private static readonly ImageSource upload_disabled_image = ReadImage("icons8-upload-disabled.png");
 
+        private static readonly ImageSource play_image = ReadImage("icons8-play.png");
+        private static readonly ImageSource play_disabled_image = ReadImage("icons8-play-disabled.png");
+
+        private static readonly ImageSource pause_image = ReadImage("icons8-pause.png");
+        private static readonly ImageSource pause_disabled_image = ReadImage("icons8-pause-disabled.png");
+
         private static readonly ImageSource stop_image = ReadImage("icons8-stop.png");
         private static readonly ImageSource stop_disabled_image = ReadImage("icons8-stop-disabled.png");
 
-        private Media? _media;
-        private Media Media {
-            get => _media ?? throw new InvalidOperationException("No media is opened");
-            set => _media = value;
-        }
+        private Media? Media { get; set; } = null;
+
+        [MemberNotNullWhen(returnValue: true, nameof(Media))]
+        private bool HasMedia => Media is not null;
 
         private LibVLC? _vlc;
         private LibVLC VLC { get => _vlc ??= new(); }
 
-        private AiServer? _comm_server;
-        private AiServer CommServer { 
-            get => _comm_server ?? throw new InvalidOperationException("No comm server instance exists");
-            set => _comm_server = value;
-        }
+        private AiServer? CommServer { get; set; }
+        private AiFileServer? DataServer { get; set; }
 
-        private AiFileServer? _data_server;
-        private AiFileServer DataServer {
-            get => _data_server ?? throw new InvalidOperationException("No data server instance exists");
-            set => _data_server = value;
-        }
+        [MemberNotNullWhen(returnValue: true, nameof(CommServer))]
+        private bool CommRunning => (CommServer is not null);
+
+        [MemberNotNullWhen(returnValue: true, nameof(DataServer))]
+        private bool DataRunning => (DataServer is not null);
+
+        [MemberNotNullWhen(returnValue: true, nameof(CommServer), nameof(DataServer))]
+        private bool ServersRunning => CommRunning && DataRunning;
 
         private readonly ILoggerFactory _logger_factory = LoggerFactory.Create(builder => {
             builder
@@ -55,74 +61,49 @@ namespace AiSyncServer {
 
         public ServerWindow() {
             InitializeComponent();
-
-            Loaded += Window_Loaded;
-
-            Closed += ServerWindow_Closed;
-
-            UploadFile.IsEnabledChanged += (_, _) =>
-                UploadFileImage.Source = UploadFile.IsEnabled ? upload_image : upload_disabled_image;
-
-            Stop.IsEnabledChanged += (_, _) =>
-                StopImage.Source = Stop.IsEnabled ? stop_image : stop_disabled_image;
         }
 
-        private void ServerWindow_Closed(object? sender, EventArgs e) {
-            _media?.Dispose();
-            _vlc?.Dispose();
-            _comm_server?.Dispose();
-            _data_server?.Dispose();
-        }
+        private void UpdateImages() {
+            UploadFileImage.Source = UploadFile.IsEnabled ? upload_image : upload_disabled_image;
+            StopImage.Source = Stop.IsEnabled ? stop_image : stop_disabled_image;
 
-        private void Window_Loaded(object sender, RoutedEventArgs e) {
-            Core.Initialize();
-
-            _vlc ??= new();
-
-            LockUI(true);
-            Start.IsEnabled = true;
-            CommPort.IsEnabled = true;
-            DataPort.IsEnabled = true;
+            if (ServersRunning && CommServer.Playing) {
+                PlayPauseImage.Source = PlayPause.IsEnabled ? pause_image : pause_disabled_image;
+            } else {
+                PlayPauseImage.Source = PlayPause.IsEnabled ? play_image : play_disabled_image;
+            }
         }
 
         private void LockUI(bool locked) {
             bool new_state = !locked;
 
             UploadFile.IsEnabled = new_state;
+            PlayPause.IsEnabled = new_state;
             Stop.IsEnabled = new_state;
-            Start.IsEnabled = new_state;
-            DisconnectAll.IsEnabled = new_state;
+            StartServer.IsEnabled = new_state;
+            StopServer.IsEnabled = new_state;
             CommPort.IsEnabled = new_state;
             DataPort.IsEnabled = new_state;
         }
 
-        private void ResetProgressRangePercent(double max) {
-            Progress.Maximum = max;
-            Progress.Value = 0;
-            ProgressText.Text = "0.0 %";
+        private void SetPreStart() {
+            LockUI(true);
+            CommPort.IsEnabled = true;
+            DataPort.IsEnabled = true;
         }
 
-        private void ResetProgressRangeInteger(long max) {
-            Progress.Maximum = max;
-            Progress.Value = 0;
-            ProgressText.Text = $"0 / {max}";
+        private void SetStarted() {
+            LockUI(true);
+            UploadFile.IsEnabled = true;
+            StopServer.IsEnabled = true;
+
         }
 
-        private void ClearProgressRange() {
-            Progress.Value = 0;
-            ProgressText.Text = String.Empty;
-        }
-
-        private void UpdateProgressPercent(double new_val) {
-            double percent = new_val / Progress.Maximum * 100;
-
-            Progress.Value = new_val;
-            ProgressText.Text = String.Format("{0:0.0}%", percent);
-        }
-
-        private void UpdateProgressInteger(long new_val, long max_val) {
-            Progress.Value = new_val;
-            ProgressText.Text = $"{new_val} / {max_val}";
+        private void SetHasFile() {
+            LockUI(true);
+            PlayPause.IsEnabled = true;
+            Stop.IsEnabled = true;
+            StopServer.IsEnabled = true;
         }
 
         private void SetStatus(string msg) {
@@ -130,10 +111,13 @@ namespace AiSyncServer {
         }
 
         private void SetCurrentPos(long ms) {
-            CurrentPos.Text = AiSync.Utils.FormatTime(ms, always_hours: Media.Duration >= (3600 * 1000), ms_prec: 3);
+            CurrentPos.Text = AiSync.Utils.FormatTime(
+                ms,
+                always_hours: (Media is null ? 0 : Media.Duration) >= (3600 * 1000),
+                ms_prec: 3);
         }
 
-        private void Port_TextChanged(object sender, TextChangedEventArgs e) {
+        private void ValidateServerParams() {
             if (!IsLoaded) {
                 return;
             }
@@ -149,94 +133,14 @@ namespace AiSyncServer {
             CommPortText.Foreground = comm_good ? Brushes.Black : Brushes.Red;
             DataPortText.Foreground = data_good ? Brushes.Black : Brushes.Red;
 
-            Start.IsEnabled = (comm_good && data_good);
-        }
-
-        [GeneratedRegex("[^0-9]+")]
-        private static partial Regex NumbersRegex();
-
-        private void Port_PreviewTextInput(object sender, TextCompositionEventArgs e) {
-            e.Handled = NumbersRegex().IsMatch(e.Text);
-        }
-
-        private async void UploadFile_Click(object sender, RoutedEventArgs e) {
-            if (Utils.GetFile(out string file)) {
-                FileInfo info = new(file);
-                string mime = MimeTypesMap.GetMimeType(info.Extension);
-
-                if (!mime.StartsWith("video")) {
-                    /* Not a video, ignore */
-                    MessageBox.Show($"Invalid MIME type:\n\n{mime}", "AiSync Server");
-                    return;
-                }
-
-                UploadFile.IsEnabled = false;
-
-                Media = new Media(VLC, new Uri(info.FullName));
-
-                await Media.Parse();
-
-                FileSelected.Text = info.Name;
-                FileMime.Text = mime;
-
-                Duration.Text = AiSync.Utils.FormatTime(Media.Duration);
-                SetCurrentPos(0);
-
-                DataServer = new AiFileServer(IPAddress.Any, DataPort.ParseText<ushort>(), info.FullName, mime);
-                CommServer.SetHasFile();
-
-                Stop.IsEnabled = true;
-            }
-        }
-
-        private void Stop_Click(object sender, RoutedEventArgs e) {
-            /* Close any media, remove current file, notify clients */
-            Stop.IsEnabled = false;
-
-            _media?.Dispose();
-
-            _media = null;
-
-            FileSelected.Text = "(none)";
-            FileMime.Text = "(none)";
-            Duration.Text = "--:--";
-            CurrentPos.Text = "--:--";
-
-            /* TODO notify clients */
-            CommServer.StopPlayback();
-
-            DataServer.Dispose();
-
-            UploadFile.IsEnabled = true;
-        }
-
-        private void Start_Click(object sender, RoutedEventArgs e) {
-            LockUI(true);
-            CommServer = new AiServer(_logger_factory, IPAddress.Any, CommPort.ParseText<ushort>());
-            CommServer.ServerStarted += ServerStarted;
-            CommServer.ClientConnected += (_, _) => Dispatcher.Invoke(ClientConnected);
-
-            CommServer.PlayingChanged += (_, e) => Dispatcher.Invoke(
-                () => Playing.Text = e.IsPlaying ? "true" : "false");
-
-            CommServer.PositionChanged += (_, e) =>
-                Dispatcher.Invoke(() => SetCurrentPos(e.Position));
-
-            CommServer.Start();
-
-            ServerStarted(null, EventArgs.Empty);
-        }
-
-        private void ServerStarted(object? sender, EventArgs e) {
-            Title = $"AiSync Server - Active";
-
-            SetStatus("Idle");
-
-            UploadFile.IsEnabled = true;
+            StartServer.IsEnabled = (comm_good && data_good);
         }
 
         private void ClientConnected() {
-            ClientsConnected.Text = CommServer.ClientCount.ToString();
+            if (ServersRunning) {
+                ClientsConnected.Text = CommServer.ClientCount.ToString();
+            }
         }
+        
     }
 }

@@ -110,9 +110,14 @@ namespace AiSync {
             server = HttpServer.ListenAsync(endpoint, false, cfg, cts.Token);
         }
 
-        public async void Dispose() {
+        public async void Stop() {
             cts.Cancel();
             await server;
+        }
+
+        public void Dispose() {
+            Stop();
+            cts?.Dispose();
 
             GC.SuppressFinalize(this);
         }
