@@ -8,6 +8,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -24,8 +25,6 @@ namespace AiSyncServer {
         }
 
         private void ServerWindow_Closed(object? sender, EventArgs e) {
-            Media?.Dispose();
-            _vlc?.Dispose();
             CommServer?.Dispose();
             DataServer?.Dispose();
         }
@@ -61,6 +60,7 @@ namespace AiSyncServer {
             });
 
             CommServer.PlayingChanged += (_, e) => Dispatcher.Invoke(UpdateImages);
+            CommServer.PlaybackStopped += (_, _) => Dispatcher.Invoke(ResetFile);
 
             CommServer.PositionChanged += (_, e) =>
                 Dispatcher.Invoke(() => SetCurrentPos(e.Position));
@@ -68,7 +68,7 @@ namespace AiSyncServer {
             CommServer.Start();
         }
 
-        private async void UploadFile_Click(object sender, RoutedEventArgs e) {
+        private void UploadFile_Click(object sender, RoutedEventArgs e) {
             if (!CommRunning) {
                 return;
             }
@@ -85,44 +85,25 @@ namespace AiSyncServer {
 
                 LockUI(true);
 
-                Media = new Media(VLC, new Uri(info.FullName));
-                await Media.Parse();
+                CommServer.SetFile(info.FullName);
 
                 FileSelected.Text = info.Name;
                 FileMime.Text = mime;
 
-                Duration.Text = AiSync.Utils.FormatTime(Media.Duration);
+                Duration.Text = AiSync.Utils.FormatTime(CommServer.Duration.GetValueOrDefault());
                 SetCurrentPos(0);
 
                 DataServer = new AiFileServer(IPAddress.Any, DataPort.ParseText<ushort>(), info.FullName, mime);
-                CommServer.SetHasFile();
                 SetHasFile();
             }
         }
 
-        private void Stop_Click(object sender, RoutedEventArgs e) {
-            /* Close any media, remove current file, notify clients */
+        private async void Stop_Click(object sender, RoutedEventArgs e) {
             if (!CommRunning) {
                 return;
             }
 
-            LockUI(true);
-
-            FileSelected.Text = "(none)";
-            FileMime.Text = "(none)";
-            Duration.Text = "--:--";
-            CurrentPos.Text = "--:--";
-
-            /* TODO notify clients */
-            CommServer.StopPlayback();
-
-            Media?.Dispose();
-            Media = null;
-
-            DataServer?.Dispose();
-            DataServer = null;
-
-            SetStarted();
+            await Task.Run(CommServer.StopPlayback);
         }
 
         private void PlayPause_Click(object sender, RoutedEventArgs e) {

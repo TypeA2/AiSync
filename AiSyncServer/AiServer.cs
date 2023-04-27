@@ -12,6 +12,9 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 
 using WatsonTcp;
+using LibVLCSharp.Shared;
+using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics;
 
 namespace AiSyncServer {
     internal enum AiConnectionState {
@@ -44,6 +47,7 @@ namespace AiSyncServer {
         
         public event EventHandler? ServerStarted;
         public event EventHandler? ClientConnected;
+        public event EventHandler? PlaybackStopped;
 
         public event EventHandler<PlayingChangedEventArgs>? PlayingChanged;
         public event EventHandler<PositionChangedEvent>? PositionChanged;
@@ -56,7 +60,15 @@ namespace AiSyncServer {
 
         private readonly ConcurrentDictionary<Guid, AiClientConnection> clients = new();
 
-        private bool has_file = false;
+        private LibVLC? _vlc;
+        private LibVLC VLC { get => _vlc ??= new(); }
+
+        private Media? media;
+
+        [MemberNotNullWhen(true, nameof(Duration))]
+        public bool HasMedia => media is not null;
+
+        public long? Duration => media?.Duration;
 
         private readonly object control_lock = new();
 
@@ -64,6 +76,7 @@ namespace AiSyncServer {
 
         private DateTime? latest_start;
         private long latest_start_pos = 0;
+        private bool during_resync = false;
 
         public long Position {
             get {
@@ -95,9 +108,7 @@ namespace AiSyncServer {
 
         private Thread? poll_thread;
 
-        private readonly CancellationTokenSource cancel_poll = new();
-
-        private bool seeking = false;
+        private CancellationTokenSource cancel_poll = new();
 
         public AiServer(ILoggerFactory fact, IPEndPoint endpoint) {
             _logger = fact.CreateLogger("AiServer");
@@ -126,6 +137,8 @@ namespace AiSyncServer {
 
             server.Dispose();
             cancel_poll.Dispose();
+            media?.Dispose();
+            _vlc?.Dispose();
         }
 
         public void Start() {
@@ -134,7 +147,6 @@ namespace AiSyncServer {
         }
 
         public void Stop() {
-            has_file = false;
             cancel_poll.Cancel();
             poll_thread?.Join();
         }
@@ -178,32 +190,54 @@ namespace AiSyncServer {
         }
 
         public async void StopPlayback() {
-            if (!has_file) {
+            if (media is null) {
                 _logger.LogWarning("Attempt to stop playback with no file present");
                 return;
             }
 
             _logger.LogInformation("Stopping playback");
-            has_file = false;
+            _logger.LogDebug("Cancelled from poll thread: {}", poll_thread == Thread.CurrentThread);
+
+            if (poll_thread != Thread.CurrentThread && poll_thread is not null && poll_thread.IsAlive) {
+                _logger.LogDebug("Cancelling polling thread");
+                cancel_poll.Cancel();
+                poll_thread.Join();
+                poll_thread = null;
+
+                /* Reset needed */
+                cancel_poll.Dispose();
+                cancel_poll = new CancellationTokenSource();
+            }
+
+            media?.Dispose();
+            media = null;
 
             lock (control_lock) {
                 Playing = false;
+                Position = 0;
 
-                PlayingChanged?.Invoke(this, new PlayingChangedEventArgs(Playing));
+                PlaybackStopped?.Invoke(this, EventArgs.Empty);
             }
 
             AiFileClosed msg = new();
             await Task.WhenAll(Clients.Select(guid => SendMessage(guid, msg)).ToArray());
         }
 
-        public async void SetHasFile() {
-            if (has_file) {
+        public async void SetFile(string path) {
+            if (media is not null) {
                 _logger.LogCritical("Tried to open a file while one is already open");
-                throw new InvalidOperationException("SetHasFile has already been called");
+                throw new InvalidOperationException("SetFile has already been called");
             }
 
-            _logger.LogInformation("New file received");
-            has_file = true;
+            _logger.LogInformation("New file received: {}", path);
+            media = new Media(VLC, new Uri(path));
+            MediaParsedStatus status = await media.Parse();
+
+            if (status != MediaParsedStatus.Done) {
+                media?.Dispose();
+                media = null;
+                PlaybackStopped?.Invoke(this, EventArgs.Empty);
+            }
 
             Task<(Guid, bool)>[] tasks = Clients
                 .Select(SendAndWaitNewFileAsync)
@@ -231,17 +265,8 @@ namespace AiSyncServer {
             poll_thread.Start();
         }
 
-        private struct PollResult {
-            public Guid guid;
-            public bool error;
-            public bool playing;
-            public long position;
-            public long delta;
-        }
-
         private void PlaybackSyncPoll(CancellationToken ct) {
             const int poll_interval = 100;
-            // const int sync_interval = 750;
 
             _logger.LogInformation("Starting polling thread");
 
@@ -258,116 +283,14 @@ namespace AiSyncServer {
 
                 /* Add some randomness because it looks better */
                 Thread.Sleep(poll_interval - rnd.Next(0, 25));
-
-                TimeSpan elapsed = start - latest_start.Value;
-
                 PositionChanged?.Invoke(this, new PositionChangedEvent(Position));
-            }
-#if false
-            long sleep_extra = 0;
 
-            while (!ct.IsCancellationRequested) {
-                while (latest_start is null) {
-                    Thread.Sleep(poll_interval);
-                    if (ct.IsCancellationRequested) {
-                        return;
-                    }
-                }
-
-                DateTime start;
-                TimeSpan elapsed;
-                long server_pos;
-
-                /* Only sync every sync_interval ms */
-                do {
-                    start = DateTime.UtcNow;
-                    elapsed = start - latest_start.Value;
-
-                    /* Do update position more often */
-                    server_pos = Position;
-
-                    PositionChanged?.Invoke(this, new PositionChangedEvent(Position));
-
-                    if (ct.IsCancellationRequested) {
-                        return;
-                    }
-
-                    Thread.Sleep(poll_interval);
-                } while (elapsed.TotalMilliseconds < (sync_interval + sleep_extra));
-
-                sleep_extra = 0;
-
-                /* Don't do anything while paused */
-                if (!Playing) {
-                    continue;
-                }
-
-                /* Check all clients */
-                Task<PollResult>[] tasks = Clients.Select(guid =>
-                        Task.Run(() => {
-                            PollResult result = default;
-                            result.guid = guid;
-                            result.error = !GetClientStatus(guid, out bool is_playing, out long position);
-
-                            if (result.error) {
-                                return result;
-                            }
-
-                            result.playing = is_playing;
-                            result.delta = position - server_pos;
-                            result.position = position;
-
-                            /* TODO check pause/play mismatch */
-                            _logger.LogDebug("{}: Δ={}, {} at {}", result.guid, result.delta,
-                                is_playing ? "playing" : "paused", AiSync.Utils.FormatTime(position));
-
-                            return result;
-                        })
-                    ).ToArray();
-
-                await Task.WhenAll(tasks);
-
-                if (seeking) {
-                    seeking = false;
-                    continue;
-                }
-
-                bool perform_seek = false;
-                long seek_target = server_pos;
-
-                /* Negative delta means client is behind, positive means client is ahead */
-                foreach (PollResult result in tasks.Select(t => t.Result)) {
-                    /* If a client is too far out of sync */
-                    if (result.position >= 0 && Math.Abs(result.delta) > CloseEnoughValue) {
-                        perform_seek = true;
-
-                        if (result.delta < 0) {
-                            /* Client is behind, set the global target further back */
-                            seek_target = Int64.Min(seek_target, result.position);
-                        } else {
-                            /* If the client is ahead, just seek to server_pos */
-                        }
-                    }
-                }
-
-                /* Play it safe:
-                 *  - If someone falls behind, pause everyone at that client's position.
-                 *  - If someone is ahead, pause everyone at the server's position
-                 */
-                if (perform_seek) {
-                    _logger.LogInformation("Correcting synchronization to {}", AiSync.Utils.FormatTime(seek_target));
-
-                    latest_start = null;
-
-                    HandleClientRequestsPause(new AiClientRequestsPause() {
-                        Position = seek_target,
-                    });
-
-                    /* Give clients some time to actually adjust */
-                    sleep_extra = sync_interval;
+                if (Position >= media?.Duration) {
+                    /* EOF */
+                    StopPlayback();
+                    return;
                 }
             }
-#endif
         }
 
         private Resp SendAndExpectMsg<Msg, Resp>(int ms, Guid guid, Msg src)
@@ -404,23 +327,16 @@ namespace AiSyncServer {
             return Task.Run(() => SendAndWaitNewFile(guid));
         }
 
-        private bool GetClientStatus(Guid guid, out bool is_playing, out long position) {
-            is_playing = false;
-            position = 0;
+        private AiClientStatus? GetClientStatus(Guid guid) {
             try {
-                AiClientStatus status = SendAndExpectMsg<AiServerRequestsStatus, AiClientStatus>(5 * 1000, guid, new());
-
-                is_playing = status.IsPlaying;
-                position = status.Position;
-
-                return true;
+                return SendAndExpectMsg<AiServerRequestsStatus, AiClientStatus>(5 * 1000, guid, new());
             } catch (TimeoutException) {
                 
             } catch (InvalidMessageException) {
 
             }
 
-            return false;
+            return null;
         }
 
         private void OnMessageReceived(object? sender, MessageReceivedEventArgs e) {
@@ -431,6 +347,7 @@ namespace AiSyncServer {
                 AiMessageType.ClientRequestsPause => HandleClientRequestsPause,
                 AiMessageType.ClientRequestsPlay => HandleClientRequestsPlay,
                 AiMessageType.ClientRequestsSeek => HandleClientRequestsSeek,
+                AiMessageType.PauseResync => HandlePauseRsync,
                 _ => HandleDefault,
             };
 
@@ -451,7 +368,7 @@ namespace AiSyncServer {
 
             ClientConnected?.Invoke(this, EventArgs.Empty);
 
-            if (has_file) {
+            if (media is not null) {
                 _logger.LogInformation("Sending status to {}", e.Client.Guid);
 
                 (Guid _, bool success) = await SendAndWaitNewFileAsync(e.Client.Guid);
@@ -477,12 +394,10 @@ namespace AiSyncServer {
 
             switch (type) {
                 case AiMessageType.GetStatus: {
-                    AiServerStatus status = new() {
+                    return req.ReplyWith(new AiServerStatus() {
                         IsPlaying = Playing,
                         Position = Position,
-                    };
-
-                    return req.ReplyWith(status);
+                    });
                 }
 
                 default:
@@ -518,11 +433,42 @@ namespace AiSyncServer {
 
             lock (control_lock) {
                 Position = target;
-                seeking = true;
-                //PositionChanged?.Invoke(this, new PositionChangedEvent(Position));
+                PositionChanged?.Invoke(this, new PositionChangedEvent(Position));
             }
 
             await Task.WhenAll(Clients.Select(guid => SendMessage(guid, new AiServerRequestSeek() { Target = Position })).ToArray());
+        }
+
+        private async void HandlePauseRsync(AiPauseResync msg) {
+            _logger.LogDebug("PauseResync");
+            if (during_resync) {
+                return;
+            }
+
+            during_resync = true;
+            DateTime start = DateTime.Now;
+            long target_pos = Position;
+
+            Task<AiClientStatus?>[] tasks = Clients.Select(async guid => {
+                return await Task.Run(() => GetClientStatus(guid));
+            }).ToArray();
+
+            await Task.WhenAll(tasks);
+
+            foreach (AiClientStatus status in tasks.Select(t => t.Result).WhereNotNull()) {
+                /* TODO do stuff with `playing`, maybe? */
+
+                /* Adjust position to same start time */
+                double delta = (start - status.Timestamp).TotalMilliseconds;
+
+                target_pos = Int64.Min(target_pos, (long)Math.Round(status.Position + delta));
+            }
+
+            _logger.LogInformation("Resync pausing at {}", AiSync.Utils.FormatTime(target_pos));
+
+            Pause(target_pos);
+
+            during_resync = false;
         }
 
         private void HandleDefault(Guid client, AiProtocolMessage msg) {

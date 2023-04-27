@@ -2,6 +2,8 @@
 using System.Reflection;
 using System.Windows.Controls.Primitives;
 using System.Windows.Controls;
+using System.Diagnostics;
+using System.Windows.Input;
 
 namespace AiSyncClient {
     public class AiSlider : Slider {
@@ -26,6 +28,24 @@ namespace AiSyncClient {
         public delegate string ToolTipFormatter(double value);
 
         public ToolTipFormatter? Formatter { get; set; }
+
+        public event EventHandler<MouseEventArgs>? DirectSeek;
+
+        public override void OnApplyTemplate() {
+            Track track = (Track)Template.FindName("PART_Track", this);
+
+            track.Thumb.MouseEnter += (_, e) => {
+                if (!IsEnabled) {
+                    return;
+                }
+
+                if (e.LeftButton == MouseButtonState.Pressed && e.MouseDevice.Captured is null) {
+                    DirectSeek?.Invoke(this, e);
+                }
+            };
+
+            base.OnApplyTemplate();
+        }
 
         protected override void OnThumbDragStarted(DragStartedEventArgs e) {
             base.OnThumbDragStarted(e);

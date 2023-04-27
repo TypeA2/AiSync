@@ -54,6 +54,7 @@ namespace AiSyncClient {
 
         private bool playing = false;
         private long pos_ms = 0;
+        private DateTime ts;
 
         public AiClient(ILoggerFactory fact, IPAddress addr, ushort port) : this(fact, new IPEndPoint(addr, port)) { }
 
@@ -102,6 +103,7 @@ namespace AiSyncClient {
             _logger.LogDebug("Status request, playing={}, pos={}", playing, pos_ms);
             this.playing = playing;
             this.pos_ms = pos_ms;
+            ts = DateTime.Now;
 
             sync_wait.Set();
         }
@@ -119,6 +121,11 @@ namespace AiSyncClient {
         public async void RequestSeek(long target) {
             _logger.LogInformation("Sending seek request to {}", AiSync.Utils.FormatTime(target));
             await SendMessage(new AiClientRequestSeek() { Target = target });
+        }
+
+        public async void PauseResync() {
+            _logger.LogInformation("Resync-pausing");
+            await SendMessage<AiPauseResync>();
         }
 
         private Task SendMessage<T>(T? msg = null) where T : AiProtocolMessage, new() {
@@ -204,6 +211,7 @@ namespace AiSyncClient {
 
                     status.IsPlaying = playing;
                     status.Position = pos_ms;
+                    status.Timestamp = ts;
 
                     return req.ReplyWith(status);
                 }

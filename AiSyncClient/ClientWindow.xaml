@@ -42,7 +42,7 @@
                             <TextBlock x:Name="FullscreenCurrentPosition" Grid.Column="0"
                                 VerticalAlignment="Center" Text="--:--"/>
                             <local:AiSlider x:Name="FullscreenScrubber" Grid.Column="1" VerticalAlignment="Center" Margin="10 0 0 0"  Formatter="AutoToolTipFormatter"
-                                            Minimum="0" Maximum="1" AutoToolTipPlacement="TopLeft"
+                                            Minimum="0" Maximum="1" AutoToolTipPlacement="TopLeft" IsMoveToPointEnabled="True" DirectSeek="Scrubber_DirectSeek"
                                             Thumb.DragStarted="Scrubber_DragStarted" Thumb.DragCompleted="Scrubber_DragCompleted"/>
                             <TextBlock x:Name="FullscreenDuration" Grid.Column="2" Margin="10 0 0 0"
                                 VerticalAlignment="Center" Text="--:--"/>
@@ -89,7 +89,7 @@
                 
                 <local:AiSlider x:Name="Scrubber" Grid.Column="1" VerticalAlignment="Center"
                                 Minimum="0" Maximum="1" Margin="10 0 10 0" Formatter="AutoToolTipFormatter"
-                                AutoToolTipPlacement="TopLeft"
+                                AutoToolTipPlacement="TopLeft" IsMoveToPointEnabled="True" DirectSeek="Scrubber_DirectSeek"
                                 Thumb.DragStarted="Scrubber_DragStarted" Thumb.DragCompleted="Scrubber_DragCompleted"/>
                 <TextBlock x:Name="Duration" Grid.Column="2" VerticalAlignment="Center" Text="--:--"/>
             </Grid>

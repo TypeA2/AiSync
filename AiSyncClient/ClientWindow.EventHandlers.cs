@@ -10,7 +10,6 @@ using System.Windows.Controls;
 using System.Text.RegularExpressions;
 using System.Net;
 using System.Windows.Controls.Primitives;
-using System.Threading.Tasks;
 using System.Reflection;
 using System.Diagnostics;
 
@@ -50,7 +49,7 @@ namespace AiSyncClient {
                 SetNoMedia();
             });
 
-            Player.PositionChanged += (_, _) => Dispatcher.Invoke(UpdateCurrentPosition);
+            Player.PositionChanged += (_, _) => Dispatcher.Invoke(Player_PositionChanged);
             Player.Playing += (_, _) => Dispatcher.Invoke(UpdateImages);
             Player.Paused += (_, _) => Dispatcher.Invoke(UpdateImages);
             Player.Stopped += (_, _) => Dispatcher.Invoke(UpdateImages);
@@ -120,6 +119,7 @@ namespace AiSyncClient {
                     Player.SeekTo(TimeSpan.FromMilliseconds(e.Target));
                     Scrubber.IsEnabled = true;
                     FullscreenScrubber.IsEnabled = true;
+                    remote_scrubbing = false;
                 }
             });
 
@@ -139,6 +139,7 @@ namespace AiSyncClient {
             } else {
                 LastAction.Text = "Failed to connect to server";
                 SetPreConnect();
+                ValidateConnectionParams();
             }
         }
         #endregion
@@ -164,6 +165,7 @@ namespace AiSyncClient {
 
         private void Scrubber_DragStarted(object sender, DragStartedEventArgs e) {
             scrubbing = true;
+
         }
 
         private void Scrubber_DragCompleted(object sender, DragCompletedEventArgs e) {
@@ -172,10 +174,25 @@ namespace AiSyncClient {
                 return;
             }
 
+            remote_scrubbing = true;
             long new_pos = (long)Math.Round(((AiSlider)sender).Value * Media.Duration);
             Scrub(new_pos);
 
             scrubbing = false;
+        }
+
+        private void Scrubber_DirectSeek(object sender, MouseEventArgs e) {
+            /* Prevent double moves */
+            if (remote_scrubbing) {
+                return;
+            }
+
+            if (!HasMedia) {
+                return;
+            }
+            remote_scrubbing = true;
+            long new_pos = (long)Math.Round(((AiSlider)sender).Value * Media.Duration);
+            Scrub(new_pos);
         }
 
         private void VideoInteraction_MouseDown(object sender, MouseButtonEventArgs e) {
@@ -192,6 +209,15 @@ namespace AiSyncClient {
             if (!HasMedia) {
                 /* What, how */
                 return;
+            }
+
+            /* These are kept disabled for the first playback, so clients don't seek prematurely */
+            if (!Scrubber.IsEnabled) {
+                Scrubber.IsEnabled = true;
+            }
+
+            if (!FullscreenScrubber.IsEnabled) {
+                FullscreenScrubber.IsEnabled = true;
             }
 
             /* Adjust position to sync with other clients if we're too far out of sync */
@@ -266,7 +292,13 @@ namespace AiSyncClient {
             SetFullscreen(true);
         }
 
-        private void Player_PositionChanged(object? sender, MediaPlayerPositionChangedEventArgs e) {
+        private void Player_PositionChanged() {
+            UpdateCurrentPosition();
+
+            if (scrubbing || remote_scrubbing) {
+                /* Ignore */
+                return;
+            }
             AiServerStatus? status = CommClient.GetStatus();
 
             if (status is null) {
@@ -274,7 +306,10 @@ namespace AiSyncClient {
                 return;
             }
 
-            Trace.WriteLine($"Delta: {status.Position.Difference(Player.PositionMs())}");
+            long delta = status.Position.Difference(Player.PositionMs());
+            if (delta > CommClient.CloseEnoughValue) {
+                CommClient.PauseResync();
+            }
         }
         #endregion
     }

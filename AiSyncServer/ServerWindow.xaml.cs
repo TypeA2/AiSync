@@ -33,14 +33,6 @@ namespace AiSyncServer {
         private static readonly ImageSource stop_image = ReadImage("icons8-stop.png");
         private static readonly ImageSource stop_disabled_image = ReadImage("icons8-stop-disabled.png");
 
-        private Media? Media { get; set; } = null;
-
-        [MemberNotNullWhen(returnValue: true, nameof(Media))]
-        private bool HasMedia => Media is not null;
-
-        private LibVLC? _vlc;
-        private LibVLC VLC { get => _vlc ??= new(); }
-
         private AiServer? CommServer { get; set; }
         private AiFileServer? DataServer { get; set; }
 
@@ -111,9 +103,13 @@ namespace AiSyncServer {
         }
 
         private void SetCurrentPos(long ms) {
+            if (CommServer is null) {
+                return;
+            }
+
             CurrentPos.Text = AiSync.Utils.FormatTime(
                 ms,
-                always_hours: (Media is null ? 0 : Media.Duration) >= (3600 * 1000),
+                always_hours: (CommServer.Duration.GetValueOrDefault()) >= (3600 * 1000),
                 ms_prec: 3);
         }
 
@@ -142,5 +138,24 @@ namespace AiSyncServer {
             }
         }
         
+        private void ResetFile() {
+            /* Close any media, remove current file, notify clients */
+            if (!CommRunning) {
+                return;
+            }
+
+            LockUI(true);
+
+            FileSelected.Text = "(none)";
+            FileMime.Text = "(none)";
+            Duration.Text = "--:--";
+            CurrentPos.Text = "--:--";
+
+            DataServer?.Dispose();
+            DataServer = null;
+
+            SetStarted();
+            UpdateImages();
+        }
     }
 }

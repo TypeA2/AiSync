@@ -73,6 +73,8 @@ namespace AiSync {
         GetStatus,
         ClientStatus,
         ServerStatus,
+
+        PauseResync,
     }
 
     [AiProtocolMessage(AiMessageType.None)]
@@ -199,6 +201,9 @@ namespace AiSync {
 
         [JsonProperty("position", Required = Required.Always)]
         public long Position { get; set; }
+
+        [JsonProperty("timestamp", Required = Required.Always)]
+        public DateTime Timestamp { get; set; }
     }
 
     [AiProtocolMessage(AiMessageType.ClientStatus)]
@@ -206,4 +211,7 @@ namespace AiSync {
 
     [AiProtocolMessage(AiMessageType.ServerStatus)]
     public class AiServerStatus : AiStatusMessage { }
+
+    [AiProtocolMessage(AiMessageType.PauseResync)]
+    public class AiPauseResync : AiStatusMessage { }
 }

@@ -56,6 +56,7 @@ namespace AiSyncClient {
         }
 
         private bool scrubbing = false;
+        private bool remote_scrubbing = false;
 
         private readonly object hide_ui_lock = new();
         private bool hide_ui_running = false;
@@ -267,11 +268,11 @@ namespace AiSyncClient {
             LockUI(true);
 
             PlayPause.IsEnabled = true;
-            Scrubber.IsEnabled = true;
+            // Scrubber.IsEnabled = true;
             Volume.IsEnabled = true;
 
             FullscreenPlayPause.IsEnabled = true;
-            FullscreenScrubber.IsEnabled = true;
+            // FullscreenScrubber.IsEnabled = true;
             FullscreenVolume.IsEnabled = true;
 
             EnterFullscreen.IsEnabled = true;
@@ -445,7 +446,6 @@ namespace AiSyncClient {
                         UpdateCurrentPosition();
                     });
 
-            Player.PositionChanged += Player_PositionChanged;
 
             await Player.Media.Parse(MediaParseOptions.ParseNetwork);
 
