@@ -4,7 +4,6 @@ using HeyRed.Mime;
 using LibVLCSharp.Shared;
 
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Net;
 using System.Text.RegularExpressions;
@@ -12,7 +11,6 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using System.Windows.Media;
 
 namespace AiSyncServer {
     public partial class ServerWindow {
@@ -68,7 +66,7 @@ namespace AiSyncServer {
             CommServer.Start();
         }
 
-        private void UploadFile_Click(object sender, RoutedEventArgs e) {
+        private async void UploadFile_Click(object sender, RoutedEventArgs e) {
             if (!CommRunning) {
                 return;
             }
@@ -85,7 +83,7 @@ namespace AiSyncServer {
 
                 LockUI(true);
 
-                CommServer.SetFile(info.FullName);
+                await CommServer.SetFile(info.FullName);
 
                 FileSelected.Text = info.Name;
                 FileMime.Text = mime;

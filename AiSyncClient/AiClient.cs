@@ -8,7 +8,6 @@ using System.Net.Sockets;
 using System.Reflection;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Windows;
 
 using WatsonTcp;
 
@@ -35,7 +34,7 @@ namespace AiSyncClient {
 
     internal class AiClient : IDisposable {
         public event EventHandler? GotFile;
-        public event EventHandler? EnableControls;
+        public event EventHandler? Connected;
         public event EventHandler? CloseFile;
 
         public event EventHandler<PausePlayEventArgs>? PausePlay;
@@ -227,7 +226,7 @@ namespace AiSyncClient {
 
         private void HandleServerReady(AiServerReady msg) {
             _logger.LogInformation("Server is ready");
-            EnableControls?.Invoke(this, EventArgs.Empty);
+            Connected?.Invoke(this, EventArgs.Empty);
         }
 
         private void HandleFileClosed(AiFileClosed msg) {

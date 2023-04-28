@@ -223,7 +223,7 @@ namespace AiSyncServer {
             await Task.WhenAll(Clients.Select(guid => SendMessage(guid, msg)).ToArray());
         }
 
-        public async void SetFile(string path) {
+        public async Task SetFile(string path) {
             if (media is not null) {
                 _logger.LogCritical("Tried to open a file while one is already open");
                 throw new InvalidOperationException("SetFile has already been called");
@@ -374,6 +374,16 @@ namespace AiSyncServer {
                 (Guid _, bool success) = await SendAndWaitNewFileAsync(e.Client.Guid);
                 if (success) {
                     await SendMessage<AiServerReady>(e.Client.Guid);
+
+                    long pos = Position;
+                    if (Playing) {
+                        _logger.LogDebug("Playing new client at {}", pos);
+                        await SendMessage(e.Client.Guid, new AiServerRequestsPlay() { Position = pos });
+                    } else {
+                        _logger.LogDebug("Pausing new client at {}", pos);
+                        await SendMessage(e.Client.Guid, new AiServerRequestsPause() { Position = pos });
+                    }
+
                 } else if (success) {
                     _logger.LogInformation("Client rejected: {}", e.Client.Guid);
                     server.DisconnectClient(e.Client.Guid);
@@ -408,7 +418,8 @@ namespace AiSyncServer {
         private void HandleClientRequestsPause(AiClientRequestsPause msg) {
             _logger.LogDebug("ClientRequestsPause: {}", msg.Position);
 
-            long pos = (msg.Position < 0) ? Position : msg.Position; // Int64.Clamp(msg.Position, 0, Int64.MaxValue);
+            /* Use server position if <0 */
+            long pos = (msg.Position < 0) ? Position : msg.Position;
 
             _logger.LogInformation("Pause requested at {}", AiSync.Utils.FormatTime(pos));
 
@@ -418,7 +429,8 @@ namespace AiSyncServer {
         private void HandleClientRequestsPlay(AiClientRequestsPlay msg) {
             _logger.LogDebug("ClientRequestsPlay: {}", msg.Position);
 
-            long pos = (msg.Position < 0) ? Position : msg.Position; // Int64.Clamp(msg.Position, 0, Int64.MaxValue);
+            /* Use server position if <0 */
+            long pos = (msg.Position < 0) ? Position : msg.Position;
 
             _logger.LogInformation("Play requested at {}", AiSync.Utils.FormatTime(pos));
 
@@ -427,7 +439,9 @@ namespace AiSyncServer {
 
         private async void HandleClientRequestsSeek(AiClientRequestSeek msg) {
             _logger.LogDebug("ClientRequestsSeek: {}", msg.Target);
-            long target = (msg.Target < 0) ? Position : msg.Target; // Int64.Clamp(msg.Target, 0, Int64.MaxValue);
+
+            /* Seek to server pos if <0 */
+            long target = (msg.Target < 0) ? Position : msg.Target;
 
             _logger.LogInformation("Seek requested to {}", AiSync.Utils.FormatTime(msg.Target));
 

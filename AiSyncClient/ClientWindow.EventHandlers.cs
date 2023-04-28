@@ -54,6 +54,10 @@ namespace AiSyncClient {
             Player.Paused += (_, _) => Dispatcher.Invoke(UpdateImages);
             Player.Stopped += (_, _) => Dispatcher.Invoke(UpdateImages);
 
+            Player.SeekableChanged += (_, e) => {
+                Trace.WriteLine($"seekable: {e.Seekable}");
+            };
+
             Video.MediaPlayer = Player;
 
             /* Hack to get keyboard input for the ForegroundWindow as well */
@@ -107,7 +111,7 @@ namespace AiSyncClient {
             CommClient = new AiClient(_logger_factory, IPAddress.Parse(Address.Text), CommPort.ParseText<ushort>());
 
             CommClient.GotFile += (_, _) => Dispatcher.Invoke(LoadMedia);
-            CommClient.EnableControls += (_, _) => Dispatcher.Invoke(SetDefaulPlayback);
+            CommClient.Connected += (_, _) => Dispatcher.Invoke(SetDefaulPlayback);
             CommClient.CloseFile += (_, _) => Dispatcher.Invoke(CloseMedia);
 
             CommClient.PausePlay += (_, e) => Dispatcher.Invoke(() => CommClient_PausePlay(e));
@@ -224,9 +228,20 @@ namespace AiSyncClient {
             long diff = Player.PositionMs().Difference(e.Position);
             TimeSpan? adjust = (diff > CommClient.CloseEnoughValue)
                 ? TimeSpan.FromMilliseconds(e.Position) : null;
+            Trace.WriteLine($"Duration and pos: {Media.Duration} {Player.PositionMs()}");
 
-            if (e.IsPlaying && !Player.IsPlaying) {
+            //if (!Player.IsSeekable) {
+            //    Player.Pause();
+
+            //}
+
+            //Trace.WriteLine($"{Player.IsPlaying} {Player.IsSeekable} {Player.CanPause}");
+
+
+            if (e.IsPlaying) {
                 /* Set to playing */
+                Player.Play();
+
                 if (adjust is not null) {
                     if (e.Position > Player.PositionMs()) {
                         LastAction.Text = $"Server seek forward by {diff} ms and play";
@@ -238,13 +253,11 @@ namespace AiSyncClient {
                 } else {
                     LastAction.Text = $"Server play (Δ={diff} ms)";
                 }
-
-                Player.Play();
-
-            } else if (Player.IsPlaying) {
+            } else {
                 /* Set to paused */
                 Player.Pause();
 
+                /*
                 if (adjust is not null) {
                     if (e.Position > Player.PositionMs()) {
                         LastAction.Text = $"Server pause and seek forward by {diff} ms";
@@ -255,7 +268,7 @@ namespace AiSyncClient {
                     Player.SeekTo(adjust.Value);
                 } else {
                     LastAction.Text = $"Server pause (Δ={diff} ms)";
-                }
+                }*/
             }
 
             PlayPause.IsEnabled = true;
