@@ -8,6 +8,7 @@ using System;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Net;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -153,6 +154,8 @@ namespace AiSyncClient {
                 /* Dispose media but keep player alive */
                 Media?.Dispose();
                 Player.Media = null;
+
+                ClearContextMenu();
             }
 
             SetNoMedia();
@@ -470,16 +473,112 @@ namespace AiSyncClient {
                         UpdateCurrentPosition();
                     });
 
-
             await Player.Media.Parse(MediaParseOptions.ParseNetwork);
 
             Player.Volume = (int)Math.Round(Volume.Value);
+
+            MakeContextMenu();
 
             LastAction.Text = "Media loaded";
             ServerStatus.Text = "New media";
 
             CommClient.FileParsed();
             SetDefaulPlayback();
+        }
+
+        private static string GetTrackHeader(MediaTrack track, int idx) {
+            bool has_language = (track.Language is not null && track.Language != "und");
+
+            StringBuilder sb = new();
+
+            if (track.Description is not null) {
+                /* {description}( - [{language}]) */
+                sb.Append(track.Description);
+            } else {
+                /* Track {n}( - [{language}]) */
+                sb.Append($"Track {idx + 1}");
+            }
+
+            if (has_language) {
+                sb.Append($" - [{track.Language}]");
+            }
+
+            return sb.ToString();
+        }
+
+        private void MakeContextMenu() {
+            if (!HasMedia) {
+                return;
+            }
+
+            VideoStreams.Items.Clear();
+            AudioStreams.Items.Clear();
+            SubtitleStreams.Items.Clear();
+
+            var list = Media.SubItems;
+            _logger.LogDebug("Subitems: {}", list.Count);
+            foreach (var v in list) {
+                _logger.LogDebug("Media: {}", v.Mrl);
+            }
+
+            foreach (MediaTrack track in Media.Tracks) {
+                switch (track.TrackType) {
+                    case TrackType.Audio: {
+                        MenuItem item = new() {
+                            IsCheckable = true,
+                            IsChecked = AudioStreams.Items.Count == 0,
+                            IsEnabled = false,
+                            Header = GetTrackHeader(track, AudioStreams.Items.Count)
+                        };
+
+                        AudioStreams.Items.Add(item);
+                        break;
+                    }
+
+                    case TrackType.Video: {
+                        MenuItem item = new() {
+                            IsCheckable = true,
+                            IsChecked = VideoStreams.Items.Count == 0,
+                            IsEnabled = false,
+                            Header = GetTrackHeader(track, VideoStreams.Items.Count)
+                        };
+
+                        VideoStreams.Items.Add(item);
+                        break;
+                    }
+
+                    case TrackType.Text: {
+                        MenuItem item = new() {
+                            IsCheckable = true,
+                            IsChecked = SubtitleStreams.Items.Count == 0,
+                            IsEnabled = false,
+                            Header = GetTrackHeader(track, SubtitleStreams.Items.Count)
+                        };
+
+                        SubtitleStreams.Items.Add(item);
+                        break;
+                    }
+                }
+            }
+
+            AudioStreams.IsEnabled = AudioStreams.Items.Count > 0;
+            VideoStreams.IsEnabled = VideoStreams.Items.Count > 0;
+            SubtitleStreams.IsEnabled = SubtitleStreams.Items.Count > 0;
+
+            VideoContextMenu.IsEnabled = true;
+        }
+
+        private void ClearContextMenu() {
+            VideoContextMenu.IsEnabled = false;
+
+            VideoStreams.Items.Clear();
+            VideoStreams.Items.Insert(0, new Separator());
+
+            AudioStreams.Items.Clear();
+            AudioStreams.Items.Insert(0, new Separator());
+
+            SubtitleStreams.Items.Clear();
+            SubtitleStreams.Items.Insert(0, new Separator());
         }
     }
 }

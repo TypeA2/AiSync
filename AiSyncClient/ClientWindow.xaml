@@ -20,6 +20,20 @@
                   KeyDown="General_PreviewKeyDown" MouseMove="VideoInteraction_MouseMove"
                   MouseEnter="VideoInteraction_MouseEnter" MouseLeave="VideoInteraction_MouseLeave" MouseDown="VideoInteraction_MouseDown">
 
+                <Grid.ContextMenu>
+                    <ContextMenu x:Name="VideoContextMenu" IsEnabled="False">
+                        <MenuItem x:Name="AudioStreams" Header="Audio">
+                            <Separator/>
+                        </MenuItem>
+                        <MenuItem x:Name="VideoStreams" Header="Video">
+                            <Separator/>
+                        </MenuItem>
+                        <MenuItem x:Name="SubtitleStreams" Header="Subtitle">
+                            <Separator/>
+                        </MenuItem>
+                    </ContextMenu>
+                </Grid.ContextMenu>
+                
                 <Grid MaxWidth="800">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="*"/>
