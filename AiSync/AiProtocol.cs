@@ -99,14 +99,7 @@ namespace AiSync {
         private AiMessageType actual_type;
 
         public AiProtocolMessage() {
-            object[] attrs = GetType().GetCustomAttributes(typeof(AiProtocolMessageAttribute), true);
-            if (attrs == null || attrs.Length != 1) {
-                throw new InvalidMessageException(GetType(), SourceString);
-            }
-
-            AiProtocolMessageAttribute attr = (AiProtocolMessageAttribute)attrs[0];
-
-            actual_type = attr.Type;
+            actual_type = ProtocolMessageAttribute.Type;
         }
 
         [JsonProperty("type", Required = Required.Always)]

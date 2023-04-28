@@ -71,8 +71,12 @@ namespace AiSyncClient {
                    .SetMinimumLevel(Microsoft.Extensions.Logging.LogLevel.Debug);
         });
 
+        private readonly ILogger _logger;
+
         public ClientWindow() {
             InitializeComponent();
+
+            _logger = _logger_factory.CreateLogger("AiClientWindow");
         }
 
         private string AutoToolTipFormatter(double pos) {
@@ -137,6 +141,8 @@ namespace AiSyncClient {
         }
 
         private async void CloseMedia() {
+            _logger.LogInformation("Closing media");
+
             LockUI(true);
 
             if (HasMedia) {
@@ -145,11 +151,24 @@ namespace AiSyncClient {
                 }
 
                 /* Dispose media but keep player alive */
-                Media.Dispose();
+                Media?.Dispose();
                 Player.Media = null;
             }
 
             SetNoMedia();
+        }
+
+        private void DisconnectServer() {
+            _logger.LogInformation("Disconnecting from server");
+
+            CloseMedia();
+
+            _comm_client?.Dispose();
+            _comm_client = null;
+
+            LastAction.Text = "Disconnect from server";
+            SetPreConnect();
+            ValidateConnectionParams();
         }
 
         private void CancelFullscreenTimeout() {
@@ -225,10 +244,6 @@ namespace AiSyncClient {
             return HasMedia ? GetTimeString(Player.PositionMs()) : "--:--";
         }
 
-        private string GetTimeString(float pos) {
-            return HasMedia ? GetTimeString((long)Math.Round(pos * Media.Duration)) : "--:--";
-        }
-
         private string GetTimeString(double pos) {
             return HasMedia ? GetTimeString((long)Math.Round(pos * Media.Duration)) : "--:--";
         }
@@ -245,6 +260,8 @@ namespace AiSyncClient {
         private ResizeMode resize;
 
         private void SetPreConnect() {
+            _logger.LogInformation("State: PreConnect");
+
             LockUI(true);
             Address.IsEnabled = true;
             CommPort.IsEnabled = true;
@@ -252,8 +269,11 @@ namespace AiSyncClient {
         }
 
         private void SetNoMedia() {
+            _logger.LogInformation("State: NoMedia");
+
             LockUI(true);
-            Disconnect.IsEnabled = true;
+            Disconnect.IsEnabled = _comm_client?.IsConnected ?? false;
+            Connect.IsEnabled = !Disconnect.IsEnabled;
 
             FullscreenCurrentPosition.Text = "--:--";
             FullscreenDuration.Text = "--:--";
@@ -265,6 +285,8 @@ namespace AiSyncClient {
         }
 
         private void SetDefaulPlayback() {
+            _logger.LogInformation("State: DefaultPlayback");
+
             LockUI(true);
 
             PlayPause.IsEnabled = true;
@@ -282,6 +304,8 @@ namespace AiSyncClient {
         }
 
         private void SetFullscreen(bool new_state) {
+            _logger.LogInformation("{} fullscreen", new_state ? "Entering" : "Exiting");
+
             if (new_state) {
                 WindowStyle = WindowStyle.None;
                 WindowState = WindowState.Maximized;

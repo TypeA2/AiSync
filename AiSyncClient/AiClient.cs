@@ -35,6 +35,7 @@ namespace AiSyncClient {
     internal class AiClient : IDisposable {
         public event EventHandler? GotFile;
         public event EventHandler? Connected;
+        public event EventHandler? Disconnected;
         public event EventHandler? CloseFile;
 
         public event EventHandler<PausePlayEventArgs>? PausePlay;
@@ -44,6 +45,8 @@ namespace AiSyncClient {
         public event EventHandler? UpdateStatus;
 
         public long CloseEnoughValue { get; private set; }
+
+        public bool IsConnected => client.Connected;
 
         private readonly ILogger _logger;
 
@@ -61,6 +64,19 @@ namespace AiSyncClient {
             _logger = fact.CreateLogger("AiClient");
 
             client = new WatsonTcpClient(endpoint.Address.ToString(), endpoint.Port);
+            client.Settings.Logger = (level, msg) => {
+                _logger.Log(level switch {
+                    Severity.Debug => LogLevel.Debug,
+                    Severity.Info => LogLevel.Information,
+                    Severity.Warn => LogLevel.Warning,
+                    Severity.Error => LogLevel.Error,
+                    Severity.Alert => LogLevel.Warning,
+                    Severity.Critical => LogLevel.Critical,
+                    Severity.Emergency => LogLevel.Critical,
+                    _ => LogLevel.Warning
+                }, "{}", msg);
+            };
+
             client.Events.ServerConnected += ServerConnected;
             client.Events.ServerDisconnected += ServerDisconnected;
             client.Events.MessageReceived += MessageReceived;
@@ -68,7 +84,18 @@ namespace AiSyncClient {
             client.Callbacks.SyncRequestReceived = SyncRequestReceived;
         }
 
-        public void Dispose() {
+        public async void Dispose() {
+            if (client.Connected) {
+                client.Disconnect();
+            } else {
+                /* Not cleaned up in this case */
+                foreach (Task task in client.GetPrivateTasks()) {
+                    try {
+                        await task;
+                    } catch (TaskCanceledException) { }
+                }
+            }
+
             client.Dispose();
             sync_wait.Dispose();
             GC.SuppressFinalize(this);
@@ -86,11 +113,6 @@ namespace AiSyncClient {
                 }
                 return client.Connected;
             });
-        }
-
-        public void Disconnect() {
-            _logger.LogInformation("Disconnecting");
-            client.Disconnect();
         }
 
         public void FileParsed() {
@@ -135,13 +157,14 @@ namespace AiSyncClient {
             _logger.LogInformation("Connected");
         }
         private void ServerDisconnected(object? sender, DisconnectionEventArgs e) {
-            _logger.LogInformation("Disconnected, reason: ", e.Reason);
+            _logger.LogInformation("Disconnected, reason: {}", e.Reason);
+            Disconnected?.Invoke(this, EventArgs.Empty);
         }
 
         private Resp SendAndExpectMsg<Msg, Resp>(int ms, Msg src)
             where Msg : AiProtocolMessage
             where Resp : AiProtocolMessage {
-            SyncResponse response = client.SendAndWait(5 * 1000, src.Serialize());
+            SyncResponse response = client.SendAndWait(ms, src.Serialize());
 
             return response.Data.ToUtf8().AiDeserialize<Resp>();
         }

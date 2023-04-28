@@ -50,7 +50,8 @@ namespace AiSyncServer {
             LockUI(true);
             CommServer = new AiServer(_logger_factory, IPAddress.Any, CommPort.ParseText<ushort>());
 
-            CommServer.ClientConnected += (_, _) => Dispatcher.Invoke(ClientConnected);
+            CommServer.ClientConnected += (_, _) => Dispatcher.Invoke(UpdateClientCount);
+            CommServer.ClientDisconnected += (_, _) => Dispatcher.Invoke(UpdateClientCount);
 
             CommServer.ServerStarted += (_, _) => Dispatcher.Invoke(() => {
                 SetStatus("Idle");
@@ -121,15 +122,19 @@ namespace AiSyncServer {
         private void StopServer_Click(object sender, RoutedEventArgs e) {
             LockUI(true);
             if (DataRunning) {
-                DataServer.Stop();
                 DataServer.Dispose();
+                DataServer = null;
             }
 
             if (CommRunning) {
-                CommServer.Stop();
                 CommServer.Dispose();
+                CommServer = null;
             }
+
+            ResetUiFields();
+
             SetPreStart();
+            ValidateServerParams();
         }
         #endregion
     }

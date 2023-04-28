@@ -47,6 +47,7 @@ namespace AiSyncServer {
         
         public event EventHandler? ServerStarted;
         public event EventHandler? ClientConnected;
+        public event EventHandler? ClientDisconnected;
         public event EventHandler? PlaybackStopped;
 
         public event EventHandler<PlayingChangedEventArgs>? PlayingChanged;
@@ -57,8 +58,6 @@ namespace AiSyncServer {
         private readonly WatsonTcpServer server;
 
         public AiServer(ILoggerFactory fact, IPAddress addr, ushort port) : this(fact, new IPEndPoint(addr, port)) { }
-
-        private readonly ConcurrentDictionary<Guid, AiClientConnection> clients = new();
 
         private LibVLC? _vlc;
         private LibVLC VLC { get => _vlc ??= new(); }
@@ -101,23 +100,48 @@ namespace AiSyncServer {
             }
         }
 
-        public IEnumerable<Guid> Clients { get => clients.Keys; }
-        public int ClientCount { get => clients.Count; }
+        private readonly List<Guid> _clients = new();
+
+        public IList<Guid> Clients { get => _clients; }
+
+        public int ClientCount { get => _clients.Count; }
 
         public static long CloseEnoughValue { get => 1500; }
 
         private Thread? poll_thread;
 
         private CancellationTokenSource cancel_poll = new();
+        
+        private readonly ManualResetEventSlim close_event = new();
 
         public AiServer(ILoggerFactory fact, IPEndPoint endpoint) {
             _logger = fact.CreateLogger("AiServer");
 
             server = new WatsonTcpServer(endpoint.Address.ToString(), endpoint.Port) ;
+            server.Settings.Logger = (level, msg) => {
+                _logger.Log(level switch {
+                    Severity.Debug => Microsoft.Extensions.Logging.LogLevel.Debug,
+                    Severity.Info => Microsoft.Extensions.Logging.LogLevel.Information,
+                    Severity.Warn => Microsoft.Extensions.Logging.LogLevel.Warning,
+                    Severity.Error => Microsoft.Extensions.Logging.LogLevel.Error,
+                    Severity.Alert => Microsoft.Extensions.Logging.LogLevel.Warning,
+                    Severity.Critical => Microsoft.Extensions.Logging.LogLevel.Critical,
+                    Severity.Emergency => Microsoft.Extensions.Logging.LogLevel.Critical,
+                    _ => Microsoft.Extensions.Logging.LogLevel.Warning
+                }, "{}", msg);
+            };
 
             server.Events.MessageReceived += OnMessageReceived;
             server.Events.ClientConnected += OnClientConnected;
             server.Events.ClientDisconnected += OnClientDisconnected;
+            server.Events.ExceptionEncountered += (_, e) => {
+                _logger.LogWarning("{}: {}", e.Exception.GetType(), e.Exception.Message);
+            };
+
+            server.Events.ServerStopped += (_, _) => {
+                _logger.LogInformation("Server stopped");
+                close_event.Set();
+            };
 
             server.Callbacks.SyncRequestReceived = OnSyncRequestReceived;
 
@@ -125,20 +149,56 @@ namespace AiSyncServer {
                 ServerStarted?.Invoke(this, EventArgs.Empty);
         }
 
-        public void Dispose() {
+        public async void Dispose() {
             if (server.IsListening) {
-                server.Stop();
+                await Task.Run(StopPlayback);
+            }
+            
+            List<Task> tasks = new();
+
+            FieldInfo[] fields = server
+                .GetType()
+                .GetFields(BindingFlags.Instance | BindingFlags.NonPublic);
+
+            PropertyInfo? data_receiver_field = typeof(ClientMetadata).GetProperty("DataReceiver", BindingFlags.NonPublic | BindingFlags.Instance);
+            
+            /* Just accept the crash if this fails */
+            if (data_receiver_field is not null) {
+                foreach (FieldInfo field in fields) {
+                    if (field.FieldType == typeof(ConcurrentDictionary<Guid, ClientMetadata>)) {
+                        /* Gather all tasks belonging to clients */
+                        var clients = field.GetValue(server) as ConcurrentDictionary<Guid, ClientMetadata>;
+
+                        /* Add all non-null DataReceiver fields */
+                        if (clients is not null) {
+                            tasks.AddRange(
+                                clients.Values
+                                .Select(c => data_receiver_field.GetValue(c) as Task)
+                                .WhereNotNull());
+                        }
+                    }
+                }
             }
 
-            if (!cancel_poll.IsCancellationRequested) {
-                cancel_poll.Cancel();
-                poll_thread?.Join();
+            _logger.LogDebug("Got receiver tasks for {} clients", tasks.Count);
+            
+            server.DisconnectClients();
+            server.Stop();
+
+            /* WatsonTcpServer does not await it's tasks when disposing, so do it manually */
+            foreach (Task task in server.GetPrivateTasks()) {
+                await task;
             }
+
+            await Task.WhenAll(tasks);
 
             server.Dispose();
+
             cancel_poll.Dispose();
             media?.Dispose();
             _vlc?.Dispose();
+
+            GC.SuppressFinalize(this);
         }
 
         public void Start() {
@@ -147,8 +207,10 @@ namespace AiSyncServer {
         }
 
         public void Stop() {
-            cancel_poll.Cancel();
-            poll_thread?.Join();
+            StopPlayback();
+
+            server.DisconnectClients();
+            server.Stop();
         }
 
         public async void Play(long pos) {
@@ -195,8 +257,12 @@ namespace AiSyncServer {
                 return;
             }
 
+            if (cancel_poll.IsCancellationRequested) {
+                _logger.LogInformation("Already stopped");
+                return;
+            }
+
             _logger.LogInformation("Stopping playback");
-            _logger.LogDebug("Cancelled from poll thread: {}", poll_thread == Thread.CurrentThread);
 
             if (poll_thread != Thread.CurrentThread && poll_thread is not null && poll_thread.IsAlive) {
                 _logger.LogDebug("Cancelling polling thread");
@@ -362,9 +428,11 @@ namespace AiSyncServer {
         }
 
         private async void OnClientConnected(object? sender, ConnectionEventArgs e) {
-            _logger.LogInformation("Client connected: {}", e.Client.Guid);
+            _logger.LogInformation("Client connected: {}, {} total", e.Client.Guid, ClientCount);
 
-            clients.TryAdd(e.Client.Guid, new AiClientConnection() { State = AiConnectionState.Connected });
+            lock (_clients) {
+                _clients.Add(e.Client.Guid);
+            }
 
             ClientConnected?.Invoke(this, EventArgs.Empty);
 
@@ -395,7 +463,12 @@ namespace AiSyncServer {
 
         private void OnClientDisconnected(object? sender, DisconnectionEventArgs e) {
             _logger.LogInformation("Client disconnected: {}, reason: {}", e.Client.Guid, e.Reason);
-            clients.TryRemove(e.Client.Guid, out AiClientConnection _);
+            
+            lock (_clients) {
+                _clients.Remove(e.Client.Guid);
+            }
+            
+            ClientDisconnected?.Invoke(this, EventArgs.Empty);
         }
 
         private SyncResponse OnSyncRequestReceived(SyncRequest req) {

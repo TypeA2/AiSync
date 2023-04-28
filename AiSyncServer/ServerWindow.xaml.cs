@@ -132,8 +132,8 @@ namespace AiSyncServer {
             StartServer.IsEnabled = (comm_good && data_good);
         }
 
-        private void ClientConnected() {
-            if (ServersRunning) {
+        private void UpdateClientCount() {
+            if (CommRunning) {
                 ClientsConnected.Text = CommServer.ClientCount.ToString();
             }
         }
@@ -144,18 +144,22 @@ namespace AiSyncServer {
                 return;
             }
 
-            LockUI(true);
-
-            FileSelected.Text = "(none)";
-            FileMime.Text = "(none)";
-            Duration.Text = "--:--";
-            CurrentPos.Text = "--:--";
+            ResetUiFields();
 
             DataServer?.Dispose();
             DataServer = null;
 
             SetStarted();
             UpdateImages();
+        }
+
+        private void ResetUiFields() {
+            LockUI(true);
+
+            FileSelected.Text = "(none)";
+            FileMime.Text = "(none)";
+            Duration.Text = "--:--";
+            CurrentPos.Text = "--:--";
         }
     }
 }

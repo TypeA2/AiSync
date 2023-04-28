@@ -2,7 +2,6 @@
 using System.Reflection;
 using System.Windows.Controls.Primitives;
 using System.Windows.Controls;
-using System.Diagnostics;
 using System.Windows.Input;
 
 namespace AiSyncClient {

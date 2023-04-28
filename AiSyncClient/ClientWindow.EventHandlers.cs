@@ -12,6 +12,8 @@ using System.Net;
 using System.Windows.Controls.Primitives;
 using System.Reflection;
 using System.Diagnostics;
+using System.Threading.Tasks;
+using Microsoft.Extensions.Logging;
 
 namespace AiSyncClient {
     public partial class ClientWindow {
@@ -40,23 +42,28 @@ namespace AiSyncClient {
         }
 
         private void Video_Loaded(object sender, RoutedEventArgs e) {
+            Scrubber.Formatter = AutoToolTipFormatter;
+            FullscreenScrubber.Formatter = AutoToolTipFormatter;
+
             Core.Initialize();
 
             Player = new MediaPlayer(VLC);
 
             Player.EndReached += (_, _) => Dispatcher.Invoke(() => {
+                _logger.LogInformation("End reached");
+
                 Media?.Dispose();
+                Player.Media = null;
                 SetNoMedia();
             });
 
             Player.PositionChanged += (_, _) => Dispatcher.Invoke(Player_PositionChanged);
             Player.Playing += (_, _) => Dispatcher.Invoke(UpdateImages);
             Player.Paused += (_, _) => Dispatcher.Invoke(UpdateImages);
-            Player.Stopped += (_, _) => Dispatcher.Invoke(UpdateImages);
-
-            Player.SeekableChanged += (_, e) => {
-                Trace.WriteLine($"seekable: {e.Seekable}");
-            };
+            Player.Stopped += (_, _) => Dispatcher.Invoke(() => {
+                _logger.LogInformation("Playback stopped: {}", _comm_client?.IsConnected ?? false);
+                UpdateImages();
+            });
 
             Video.MediaPlayer = Player;
 
@@ -79,15 +86,7 @@ namespace AiSyncClient {
         }
 
         private void Disconnect_Click(object sender, RoutedEventArgs e) {
-            CloseMedia();
-            SetNoMedia();
-
-            CommClient.Disconnect();
-            CommClient.Dispose();
-
-            LastAction.Text = "Disconnect from server";
-
-            SetPreConnect();
+            DisconnectServer();
         }
 
         #endregion
@@ -110,14 +109,31 @@ namespace AiSyncClient {
             /* Do connection stuff */
             CommClient = new AiClient(_logger_factory, IPAddress.Parse(Address.Text), CommPort.ParseText<ushort>());
 
-            CommClient.GotFile += (_, _) => Dispatcher.Invoke(LoadMedia);
-            CommClient.Connected += (_, _) => Dispatcher.Invoke(SetDefaulPlayback);
-            CommClient.CloseFile += (_, _) => Dispatcher.Invoke(CloseMedia);
+            CommClient.GotFile += (_, _) => Dispatcher.Invoke(() => {
+                _logger.LogInformation("Got file");
+                LoadMedia();
+            });
+            CommClient.Connected += (_, _) => Dispatcher.Invoke(() => {
+                _logger.LogInformation("Connected to server");
+                SetDefaulPlayback();
+            });
+            CommClient.Disconnected += (_, _) => Dispatcher.Invoke(() => {
+                _logger.LogInformation("Disconnected from server");
+                DisconnectServer();
+            });
+            CommClient.CloseFile += (_, _) => Dispatcher.Invoke(() => {
+                _logger.LogInformation("File closed");
+                CloseMedia();
+            });
 
-            CommClient.PausePlay += (_, e) => Dispatcher.Invoke(() => CommClient_PausePlay(e));
+            CommClient.PausePlay += (_, e) => Dispatcher.Invoke(() => {
+                _logger.LogInformation("{} at {}", e.IsPlaying ? "Playing" : "Pausing", GetTimeString(e.Position));
+                CommClient_PausePlay(e);
+            });
 
             CommClient.Seek += (_, e) => Dispatcher.Invoke(() => {
                 if (HasMedia) {
+                    _logger.LogInformation("Seek to {}", GetTimeString(e.Target));
                     LastAction.Text = $"Seek to {GetTimeString(e.Target)}";
 
                     Player.SeekTo(TimeSpan.FromMilliseconds(e.Target));
@@ -128,6 +144,7 @@ namespace AiSyncClient {
             });
 
             CommClient.UpdateStatus += (_, _) => Dispatcher.Invoke(() => {
+                _logger.LogInformation("Requesting status");
                 if (HasMedia) {
                     CommClient.SetStatus(Player.IsPlaying, Player.PositionMs());
                 } else {
@@ -228,15 +245,6 @@ namespace AiSyncClient {
             long diff = Player.PositionMs().Difference(e.Position);
             TimeSpan? adjust = (diff > CommClient.CloseEnoughValue)
                 ? TimeSpan.FromMilliseconds(e.Position) : null;
-            Trace.WriteLine($"Duration and pos: {Media.Duration} {Player.PositionMs()}");
-
-            //if (!Player.IsSeekable) {
-            //    Player.Pause();
-
-            //}
-
-            //Trace.WriteLine($"{Player.IsPlaying} {Player.IsSeekable} {Player.CanPause}");
-
 
             if (e.IsPlaying) {
                 /* Set to playing */

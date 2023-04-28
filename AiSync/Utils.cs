@@ -1,4 +1,6 @@
 ﻿using System.Numerics;
+using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace AiSync {
@@ -113,6 +115,16 @@ namespace AiSync {
             T diff = val - comp;
 
             return T.IsNegative(diff) ? -diff : diff;
+        }
+
+        public static IList<Task> GetPrivateTasks(this object src) {
+            FieldInfo[] fields = src.GetType().GetFields(BindingFlags.Instance | BindingFlags.NonPublic);
+
+            return fields
+                    .Where(f => f.FieldType == typeof(Task))
+                    .Select(f => f.GetValue(src) as Task)
+                    .WhereNotNull()
+                    .ToList();
         }
     }
 }

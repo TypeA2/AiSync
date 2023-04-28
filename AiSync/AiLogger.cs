@@ -56,7 +56,7 @@ namespace AiSync {
                 return;
             }
 
-            msg = $"[{DateTime.UtcNow}] [{logLevel}] [{_name}]: {msg}{Environment.NewLine}";
+            msg = $"[{DateTime.UtcNow}] [{logLevel}] [{_name}] {msg}{Environment.NewLine}";
 
             if (exception is not null) {
                 msg += Environment.NewLine + Environment.NewLine + exception;
