@@ -14,6 +14,7 @@ using System.Reflection;
 using System.Diagnostics;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using AiSyncClient.Properties;
 
 namespace AiSyncClient {
     public partial class ClientWindow {
@@ -35,6 +36,10 @@ namespace AiSyncClient {
             /* Make these fixed-size so elements don't jump around at below 100% volume */
             VolumeDisplay.Width = VolumeDisplay.ActualWidth;
             FullscreenVolumeDisplay.Width = VolumeDisplay.ActualWidth;
+
+            Address.Text = Settings.Default.Address;
+            CommPort.Text = Settings.Default.CommPort.ToString();
+            DataPort.Text = Settings.Default.DataPort.ToString();
 
             SetPreConnect();
             ValidateConnectionParams();

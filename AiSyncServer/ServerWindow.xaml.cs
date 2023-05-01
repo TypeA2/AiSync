@@ -16,6 +16,7 @@ using System.Windows.Media.Imaging;
 using System.Diagnostics.CodeAnalysis;
 
 using Microsoft.Extensions.Logging;
+using AiSyncServer.Properties;
 
 namespace AiSyncServer {
     public partial class ServerWindow : Window {
@@ -130,6 +131,18 @@ namespace AiSyncServer {
             DataPortText.Foreground = data_good ? Brushes.Black : Brushes.Red;
 
             StartServer.IsEnabled = (comm_good && data_good);
+
+            if (comm_good) {
+                Settings.Default.CommPort = (ushort)comm_port;
+            }
+
+            if (data_good) {
+                Settings.Default.DataPort = (ushort)data_port;
+            }
+
+            if (comm_good || data_good) {
+                Settings.Default.Save();
+            }
         }
 
         private void UpdateClientCount() {

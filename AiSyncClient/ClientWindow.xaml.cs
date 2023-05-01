@@ -1,5 +1,7 @@
 ﻿using AiSync;
 
+using AiSyncClient.Properties;
+
 using LibVLCSharp.Shared;
 
 using Microsoft.Extensions.Logging;
@@ -373,6 +375,22 @@ namespace AiSyncClient {
             AddressText.Foreground  = addr_good ? Brushes.Black : Brushes.Red;
 
             Connect.IsEnabled = (comm_good && data_good && addr_good);
+
+            if (comm_good) {
+                Settings.Default.CommPort = (ushort)comm_port;
+            }
+
+            if (data_good) {
+                Settings.Default.DataPort = (ushort)data_port;
+            }
+
+            if (addr_good) {
+                Settings.Default.Address = Address.Text;
+            }
+
+            if (comm_good || data_good || addr_good) {
+                Settings.Default.Save();
+            }
         }
 
         private void SetPlaying(bool new_playing) {

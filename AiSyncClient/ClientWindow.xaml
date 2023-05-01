@@ -118,16 +118,16 @@
                 <StackPanel x:Name="InputParameters" Orientation="Horizontal" Grid.Column="0">
                     <TextBlock x:Name="AddressText" VerticalAlignment="Center" Text="Address:"/>
                     <TextBox x:Name="Address" VerticalAlignment="Center" Margin="10 0 0 0"
-                         TextAlignment="Left" Width="256" Text="127.0.0.1" TextChanged="TextInput_TextChanged"/>
+                         TextAlignment="Left" Width="256" TextChanged="TextInput_TextChanged"/>
 
                     <TextBlock x:Name="CommPortText" VerticalAlignment="Center" Margin="10 0 0 0" Text="Comms port:" />
                     <TextBox x:Name="CommPort" VerticalAlignment="Center" Width="48" Margin="10 0 0 0"
-                         Text="26980" TextAlignment="Center" MaxLength="5"
+                         TextAlignment="Center" MaxLength="5"
                          TextChanged="TextInput_TextChanged" PreviewTextInput="Port_PreviewTextInput"/>
 
                     <TextBlock x:Name="DataPortText" VerticalAlignment="Center" Margin="10 0 0 0" Text="Data port:" />
                     <TextBox x:Name="DataPort" VerticalAlignment="Center" Width="48" Margin="10 0 0 0"
-                         Text="28524" TextAlignment="Center" MaxLength="5"
+                         TextAlignment="Center" MaxLength="5"
                          TextChanged="TextInput_TextChanged" PreviewTextInput="Port_PreviewTextInput"/>
 
                     <TextBlock VerticalAlignment="Center" Margin="10 0 0 0" Text="Local controls:"/>

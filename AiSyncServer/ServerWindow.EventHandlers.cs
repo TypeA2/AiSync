@@ -1,4 +1,7 @@
 ﻿using AiSync;
+
+using AiSyncServer.Properties;
+
 using HeyRed.Mime;
 
 using LibVLCSharp.Shared;
@@ -11,12 +14,18 @@ using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 
 namespace AiSyncServer {
     public partial class ServerWindow {
         #region Setup
         private void ServerWindow_Loaded(object sender, RoutedEventArgs e) {
             Core.Initialize();
+
+            CommPort.Text = Settings.Default.CommPort.ToString();
+            DataPort.Text = Settings.Default.DataPort.ToString();
+
+            ExtraLatency.Text = Settings.Default.ExtraLatency.ToString();
 
             SetPreStart();
             ValidateServerParams();
@@ -44,6 +53,23 @@ namespace AiSyncServer {
 
         private void Port_PreviewTextInput(object sender, TextCompositionEventArgs e) {
             e.Handled = NumbersRegex().IsMatch(e.Text);
+        }
+
+        private void ExtraLatency_TextChanged(object sender, TextChangedEventArgs e) {
+            if (!IsLoaded) {
+                return;
+            }
+
+            /* We already filtered on digits only, so we know it's valid, but limit to 5s */
+            bool latency_good = ExtraLatency.TryParseText(out ulong val) && val <= 5000;
+
+            ExtraLatencyText.Foreground = latency_good ? Brushes.Black : Brushes.Red;
+
+            if (latency_good) {
+                /* TODO actually apply it */
+                Settings.Default.ExtraLatency = val;
+                Settings.Default.Save();
+            }
         }
 
         private void StartServer_Click(object sender, RoutedEventArgs e) {
