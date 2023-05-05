@@ -2,6 +2,7 @@
 
 using System;
 using System.Diagnostics.CodeAnalysis;
+using System.Diagnostics.Tracing;
 using System.Threading;
 
 namespace AiSyncServer {
@@ -80,7 +81,9 @@ namespace AiSyncServer {
             _min_interval = min_interval;
             _max_interval = max_interval;
 
-            _thread = new Thread(() => Poll(_cts.Token));
+            _thread = new Thread(() => Poll(_cts.Token)) {
+                Name = "AiPlaybackTimer Poll Thread"
+            };
             _thread.Start();
         }
 
@@ -92,9 +95,16 @@ namespace AiSyncServer {
             _logger.LogInformation("Stopping timer");
 
             if (_thread.IsAlive) {
-                _cts.Cancel();
+                _logger.LogInformation("Stopping thread: {}", _thread.ThreadState);
+                if (!_cts.IsCancellationRequested) {
+                    _cts.Cancel();
+                }
+
                 _thread.Join();
+
             }
+
+            _logger.LogInformation("Stopped timer thread");
 
             _cts.Dispose();
 
@@ -102,8 +112,6 @@ namespace AiSyncServer {
                 State = AiSync.PlayingState.Stopped;
                 Position = 0;
             }
-
-            PlayingChanged?.Invoke(this, new PlayingChangedEventArgs(AiSync.PlayingState.Stopped));
 
             _disposed = true;
         }
@@ -143,6 +151,11 @@ namespace AiSyncServer {
                     if (event_args.Position >= _duration) {
                         State = AiSync.PlayingState.Stopped;
                     }
+                }
+
+                if (ct.IsCancellationRequested) {
+                    /* Probably stopped */
+                    return;
                 }
 
                 if (State == AiSync.PlayingState.Stopped) {
@@ -198,6 +211,22 @@ namespace AiSyncServer {
             _logger.LogInformation("Seeking to {}", AiSync.Utils.FormatTime(pos));
 
             PositionChanged?.Invoke(this, new PositionChangedEvent(true, pos));
+        }
+
+        /* Stops playback */
+        public void Stop() {
+            DisposeCheck(_disposed);
+
+            _logger.LogInformation("Stopping at {}", AiSync.Utils.FormatTime(Position));
+
+            _cts.Cancel();
+
+            lock (_state_lock) {
+                Position = 0;
+                State = AiSync.PlayingState.Stopped;
+            }
+
+            PlayingChanged?.Invoke(this, new PlayingChangedEventArgs(State));
         }
     }
 }

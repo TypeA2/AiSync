@@ -14,6 +14,8 @@ using Microsoft.Extensions.Logging;
 using WatsonTcp;
 using LibVLCSharp.Shared;
 using System.Diagnostics.CodeAnalysis;
+using HeyRed.Mime;
+using System.Windows.Threading;
 
 namespace AiSyncServer {
     internal enum AiConnectionState {
@@ -92,10 +94,15 @@ namespace AiSyncServer {
             public void Play(long pos) => Timer.Play(pos);
             public void Pause(long pos) => Timer.Pause(pos);
             public void Seek(long pos) => Timer.Seek(pos);
+
+            public void Stop() => Timer.Stop();
         }
 
         private readonly AiMediaSource media_source = new();
         private ServerMedia? media;
+
+        private readonly IPEndPoint data_endpoint;
+        private AiFileServer? data_server;
 
         public long Position => media?.Position ?? 0;
         public long Duration => media?.Duration ?? 0;
@@ -115,16 +122,15 @@ namespace AiSyncServer {
 
         public static long CloseEnoughValue { get => 1500; }
 
-        
         private readonly ManualResetEventSlim close_event = new();
 
-        public AiServer(ILoggerFactory fact, IPAddress addr, ushort port) : this(fact, new IPEndPoint(addr, port)) { }
-
-        public AiServer(ILoggerFactory fact, IPEndPoint endpoint) {
+        public AiServer(ILoggerFactory fact, IPEndPoint comm_endpoint, IPEndPoint data_endpoint) {
             _logger_factory = fact;
             _logger = _logger_factory.CreateLogger("AiServer");
 
-            server = new WatsonTcpServer(endpoint.Address.ToString(), endpoint.Port) ;
+            this.data_endpoint = data_endpoint;
+
+            server = new WatsonTcpServer(comm_endpoint.Address.ToString(), comm_endpoint.Port) ;
             server.Settings.Logger = (level, msg) => {
                 _logger.Log(level switch {
                     Severity.Debug => Microsoft.Extensions.Logging.LogLevel.Debug,
@@ -205,6 +211,9 @@ namespace AiSyncServer {
 
             server.Dispose();
 
+            data_server?.Dispose();
+            data_server = null;
+
             /* Disposes all loaded media */
             media?.Dispose();
             media = null;
@@ -278,15 +287,16 @@ namespace AiSyncServer {
             
             _logger.LogInformation("Stopping playback");
 
-            media?.Dispose();
-            media = null;
+            PlayingChanged?.Invoke(this, new PlayingChangedEventArgs(PlayingState.Stopped));
+
+            media?.Stop();
         }
 
-        public async Task LoadMedia(string path) {
+        public async Task LoadMedia(string path, string mime) {
             DisposeCheck(_disposed);
 
             if (media is not null) {
-                _logger.LogCritical("Tried to open a file while one is already open");
+                _logger.LogWarning("Tried to open a file while one is already open");
                 throw new InvalidOperationException("SetFile has already been called");
             }
 
@@ -304,6 +314,9 @@ namespace AiSyncServer {
                 PlayingChanged?.Invoke(this, new PlayingChangedEventArgs(PlayingState.Stopped));
                 return;
             }
+
+            /* Start data server */
+            data_server = new AiFileServer(data_endpoint, path, mime);
 
             /* Notify all clients and wait */
             (Guid guid, bool success)[] results = await Task.WhenAll(Clients.Select(SendAndWaitNewFileAsync).ToArray());
@@ -323,7 +336,7 @@ namespace AiSyncServer {
             AiPlaybackTimer timer = new(_logger_factory, parsed.Duration, 75, 100);
             timer.PositionChanged += async (o, e) => {
                 if (e.IsSeek) {
-                    _logger.LogDebug("New position: {} (seek: {})", e.Position, e.IsSeek);
+                    _logger.LogDebug("New position: {} (seek: {})", AiSync.Utils.FormatTime(e.Position), e.IsSeek);
                     await SendToAll(new AiServerRequestSeek() { Target = e.Position });
                 }
 
@@ -336,6 +349,14 @@ namespace AiSyncServer {
                     case PlayingState.Stopped: {
                         /* EOF or manual stop -> close file */
                         await SendToAll<AiFileClosed>();
+
+                        await Task.Run(() => {
+                            data_server?.Dispose();
+                            data_server = null;
+
+                            media?.Dispose();
+                            media = null;
+                        });
                         break;
                     }
 
@@ -487,7 +508,7 @@ namespace AiSyncServer {
 
             switch (type) {
                 case AiMessageType.GetStatus: {
-
+                    _logger.LogDebug("Client requests status");
                     return req.ReplyWith(new AiServerStatus() {
                         State = media?.State ?? PlayingState.Stopped,
                         Position = media?.Position ?? 0,
@@ -506,6 +527,11 @@ namespace AiSyncServer {
                 return;
             }
 
+            if (during_resync) {
+                _logger.LogInformation("Discarding pause because a resync is happening");
+                return;
+            }
+
             /* Use server position if <0 */
             long pos = (msg.Position < 0) ? media.Position : msg.Position;
 
@@ -517,6 +543,11 @@ namespace AiSyncServer {
         private void HandleClientRequestsPlay(AiClientRequestsPlay msg) {
             _logger.LogDebug("ClientRequestsPlay: {}", msg.Position);
             if (media is null) {
+                return;
+            }
+
+            if (during_resync) {
+                _logger.LogInformation("Discarding play because a resync is happening");
                 return;
             }
 
@@ -534,12 +565,27 @@ namespace AiSyncServer {
                 return;
             }
 
+            if (during_resync) {
+                _logger.LogInformation("Discarding seek because a resync is happening");
+                return;
+            }
+
             /* Seek to server pos if <0 */
             long target = (msg.Target < 0) ? media.Position : msg.Target;
 
             _logger.LogInformation("Seek requested to {}", AiSync.Utils.FormatTime(msg.Target));
 
+            /* Some weird desyncs happen when just seeking, but this fixes it */
+            bool was_playing = media.State == PlayingState.Playing;
+            if (was_playing) {
+                PauseMedia(target);
+            }
+
             SeekMedia(target);
+
+            if (was_playing) {
+                PlayMedia(target);
+            }
         }
 
         private async void HandlePauseRsync(AiPauseResync msg) {

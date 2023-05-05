@@ -91,6 +91,9 @@ namespace AiSyncClient {
         }
 
         private void SetVolume(int new_val, Slider? source) {
+            Settings.Default.Volume = new_val;
+            Settings.Default.Save();
+
             if (!Video.IsLoaded) {
                 return;
             }

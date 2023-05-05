@@ -62,10 +62,10 @@
                          TextChanged="Port_TextChanged" PreviewTextInput="Port_PreviewTextInput"/>
 
             <TextBlock x:Name="ExtraLatencyText" Grid.Row="8" Grid.Column="0" Margin="0 5 0 0" VerticalAlignment="Center" Text="Extra Latency:"
-                       HorizontalAlignment="Right"/>
+                       HorizontalAlignment="Right" Visibility="Collapsed"/>
             <TextBox x:Name="ExtraLatency" Grid.Row="8" Grid.Column="1" VerticalAlignment="Center" Width="48" Margin="10 5 0 0"
                      TextAlignment="Center" HorizontalAlignment="Left"
-                     TextChanged="ExtraLatency_TextChanged" PreviewTextInput="Port_PreviewTextInput"/>
+                     TextChanged="ExtraLatency_TextChanged" PreviewTextInput="Port_PreviewTextInput" Visibility="Collapsed"/>
         </Grid>
 
         <StackPanel Orientation="Horizontal" Grid.Row="1" Margin="0 5 0 0">

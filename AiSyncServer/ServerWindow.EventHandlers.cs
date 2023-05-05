@@ -35,7 +35,6 @@ namespace AiSyncServer {
 
         private void ServerWindow_Closed(object? sender, EventArgs e) {
             CommServer?.Dispose();
-            DataServer?.Dispose();
         }
         #endregion
 
@@ -69,9 +68,6 @@ namespace AiSyncServer {
 
             if (latency_good) {
                 /* TODO actually apply it */
-                if (DataRunning) {
-                    DataServer.Delay = val;
-                }
 
                 if (CommRunning) {
                     CommServer.Delay = val;
@@ -84,7 +80,9 @@ namespace AiSyncServer {
 
         private void StartServer_Click(object sender, RoutedEventArgs e) {
             LockUI(true);
-            CommServer = new AiServer(_logger_factory, IPAddress.Any, CommPort.ParseText<ushort>());
+            IPEndPoint comm = new(IPAddress.Any, CommPort.ParseText<ushort>());
+            IPEndPoint data = new(IPAddress.Any, DataPort.ParseText<ushort>());
+            CommServer = new AiServer(_logger_factory, comm, data);
 
             CommServer.ClientConnected += (_, _) => Dispatcher.Invoke(UpdateClientCount);
             CommServer.ClientDisconnected += (_, _) => Dispatcher.Invoke(UpdateClientCount);
@@ -128,7 +126,7 @@ namespace AiSyncServer {
 
                 LockUI(true);
 
-                await CommServer.LoadMedia(info.FullName);
+                await CommServer.LoadMedia(info.FullName, mime);
 
                 FileSelected.Text = info.Name;
                 FileMime.Text = mime;
@@ -136,7 +134,6 @@ namespace AiSyncServer {
                 Duration.Text = AiSync.Utils.FormatTime(CommServer.Duration);
                 SetCurrentPos(0);
 
-                DataServer = new AiFileServer(IPAddress.Any, DataPort.ParseText<ushort>(), info.FullName, mime);
                 SetHasFile();
             }
         }
@@ -167,10 +164,6 @@ namespace AiSyncServer {
 
         private void StopServer_Click(object sender, RoutedEventArgs e) {
             LockUI(true);
-            if (DataRunning) {
-                DataServer.Dispose();
-                DataServer = null;
-            }
 
             if (CommRunning) {
                 CommServer.Dispose();

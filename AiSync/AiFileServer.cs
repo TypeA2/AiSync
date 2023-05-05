@@ -21,7 +21,7 @@ namespace AiSync {
             return Task.Run(file.Dispose);
         }
 
-        public async Task<bool> HandleAsync(IHttpContext ctx) {
+        public Task<bool> HandleAsync(IHttpContext ctx) {
             try {
                 if (Delay > 0) {
                     //await Task.Delay(Delay);
@@ -32,7 +32,7 @@ namespace AiSync {
 
                 if (!ValidateRequest(request, out long start, out long end)) {
                     response.StatusCode = Ceen.HttpStatusCode.UnprocessableEntity;
-                    return false; 
+                    return Task.FromResult(false); 
                 }
 
                 long length = end - start;
@@ -55,7 +55,7 @@ namespace AiSync {
                 /* Socket closed, ignore, this is okay (kind of) */
             }
 
-            return true;
+            return Task.FromResult(true);
         }
 
         private bool ValidateRequest(IHttpRequest request, out long start, out long end) {

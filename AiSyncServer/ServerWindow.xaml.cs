@@ -26,16 +26,9 @@ namespace AiSyncServer {
         private static readonly ImageSource stop_disabled_image = ReadImage("icons8-stop-disabled.png");
 
         private AiServer? CommServer { get; set; }
-        private AiFileServer? DataServer { get; set; }
 
         [MemberNotNullWhen(returnValue: true, nameof(CommServer))]
         private bool CommRunning => (CommServer is not null);
-
-        [MemberNotNullWhen(returnValue: true, nameof(DataServer))]
-        private bool DataRunning => (DataServer is not null);
-
-        [MemberNotNullWhen(returnValue: true, nameof(CommServer), nameof(DataServer))]
-        private bool ServersRunning => CommRunning && DataRunning;
 
         private readonly ILoggerFactory _logger_factory = LoggerFactory.Create(builder => {
             builder
@@ -55,7 +48,7 @@ namespace AiSyncServer {
             UploadFileImage.Source = UploadFile.IsEnabled ? upload_image : upload_disabled_image;
             StopImage.Source = Stop.IsEnabled ? stop_image : stop_disabled_image;
 
-            if (ServersRunning && CommServer.State == PlayingState.Playing) {
+            if (CommRunning && CommServer.State == PlayingState.Playing) {
                 PlayPauseImage.Source = PlayPause.IsEnabled ? pause_image : pause_disabled_image;
             } else {
                 PlayPauseImage.Source = PlayPause.IsEnabled ? play_image : play_disabled_image;
@@ -153,10 +146,6 @@ namespace AiSyncServer {
             }
 
             ResetUiFields();
-
-            DataServer?.Dispose();
-            DataServer = null;
-
             SetStarted();
             UpdateImages();
         }

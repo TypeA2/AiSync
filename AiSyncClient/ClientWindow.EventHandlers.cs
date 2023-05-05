@@ -11,8 +11,6 @@ using System.Text.RegularExpressions;
 using System.Net;
 using System.Windows.Controls.Primitives;
 using System.Reflection;
-using System.Diagnostics;
-using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using AiSyncClient.Properties;
 
@@ -40,6 +38,7 @@ namespace AiSyncClient {
             Address.Text = Settings.Default.Address;
             CommPort.Text = Settings.Default.CommPort.ToString();
             DataPort.Text = Settings.Default.DataPort.ToString();
+            Volume.Value = Settings.Default.Volume;
 
             SetPreConnect();
             ValidateConnectionParams();
@@ -325,15 +324,23 @@ namespace AiSyncClient {
                 /* Ignore */
                 return;
             }
+
             AiServerStatus? status = CommClient.GetStatus();
 
             if (status is null) {
-                SetPlaying(false);
+                _logger.LogInformation("Pausing (unreachable server)");
+                Player.Pause();
+                return;
+            }
+
+            if (status.State == PlayingState.Stopped) {
+                _logger.LogInformation("Server stopped, stopping too");
                 return;
             }
 
             long delta = status.Position.Difference(Player.PositionMs());
             if (delta > CommClient.CloseEnoughValue) {
+                _logger.LogDebug("Resync, delta = {}", delta);
                 CommClient.PauseResync();
             }
         }
