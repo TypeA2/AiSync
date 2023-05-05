@@ -231,7 +231,7 @@ namespace AiSyncClient {
                     UpdateStatus?.Invoke(this, EventArgs.Empty);
                     sync_wait.WaitAndReset();
 
-                    status.IsPlaying = playing;
+                    status.State = playing ? PlayingState.Playing : PlayingState.Paused;
                     status.Position = pos_ms;
                     status.Timestamp = ts;
 

@@ -6,6 +6,8 @@ using HeyRed.Mime;
 
 using LibVLCSharp.Shared;
 
+using Microsoft.Extensions.Logging;
+
 using System;
 using System.IO;
 using System.Net;
@@ -61,12 +63,20 @@ namespace AiSyncServer {
             }
 
             /* We already filtered on digits only, so we know it's valid, but limit to 5s */
-            bool latency_good = ExtraLatency.TryParseText(out ulong val) && val <= 5000;
+            bool latency_good = ExtraLatency.TryParseText(out int val) && val >= 0 && val <= 5000;
 
             ExtraLatencyText.Foreground = latency_good ? Brushes.Black : Brushes.Red;
 
             if (latency_good) {
                 /* TODO actually apply it */
+                if (DataRunning) {
+                    DataServer.Delay = val;
+                }
+
+                if (CommRunning) {
+                    CommServer.Delay = val;
+                }
+
                 Settings.Default.ExtraLatency = val;
                 Settings.Default.Save();
             }
@@ -84,8 +94,13 @@ namespace AiSyncServer {
                 SetStarted();
             });
 
-            CommServer.PlayingChanged += (_, e) => Dispatcher.Invoke(UpdateImages);
-            CommServer.PlaybackStopped += (_, _) => Dispatcher.Invoke(ResetFile);
+            CommServer.PlayingChanged += (_, e) => Dispatcher.Invoke(() => {
+                UpdateImages();
+
+                if (e.State == PlayingState.Stopped) {
+                    ResetFile();
+                }
+            });
 
             CommServer.PositionChanged += (_, e) =>
                 Dispatcher.Invoke(() => SetCurrentPos(e.Position));
@@ -99,6 +114,9 @@ namespace AiSyncServer {
             }
 
             if (Utils.GetFile(out string file)) {
+
+                _logger.LogInformation("Got file: {}", file);
+
                 FileInfo info = new(file);
                 string mime = MimeTypesMap.GetMimeType(info.Extension);
 
@@ -110,12 +128,12 @@ namespace AiSyncServer {
 
                 LockUI(true);
 
-                await CommServer.SetFile(info.FullName);
+                await CommServer.LoadMedia(info.FullName);
 
                 FileSelected.Text = info.Name;
                 FileMime.Text = mime;
 
-                Duration.Text = AiSync.Utils.FormatTime(CommServer.Duration.GetValueOrDefault());
+                Duration.Text = AiSync.Utils.FormatTime(CommServer.Duration);
                 SetCurrentPos(0);
 
                 DataServer = new AiFileServer(IPAddress.Any, DataPort.ParseText<ushort>(), info.FullName, mime);
@@ -123,12 +141,14 @@ namespace AiSyncServer {
             }
         }
 
-        private async void Stop_Click(object sender, RoutedEventArgs e) {
+        private void Stop_Click(object sender, RoutedEventArgs e) {
             if (!CommRunning) {
                 return;
             }
 
-            await Task.Run(CommServer.StopPlayback);
+            _logger.LogInformation("Stopping at {}", AiSync.Utils.FormatTime(CommServer.Position));
+
+            CommServer.StopMedia();
         }
 
         private void PlayPause_Click(object sender, RoutedEventArgs e) {
@@ -136,13 +156,13 @@ namespace AiSyncServer {
                 return;
             }
 
-            if (CommServer.Playing) {
-                CommServer.Pause(CommServer.Position);
-            } else {
-                CommServer.Play(CommServer.Position);
-            }
+            _logger.LogInformation("Play/Pause, current state: {} at {}", CommServer.State, AiSync.Utils.FormatTime(CommServer.Position));
 
-            UpdateImages();
+            if (CommServer.State == PlayingState.Playing) {
+                CommServer.PauseMedia(CommServer.Position);
+            } else {
+                CommServer.PlayMedia(CommServer.Position);
+            }
         }
 
         private void StopServer_Click(object sender, RoutedEventArgs e) {

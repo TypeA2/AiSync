@@ -77,6 +77,12 @@ namespace AiSync {
         PauseResync,
     }
 
+    public enum PlayingState {
+        Stopped,
+        Playing,
+        Paused,
+    }
+
     [AiProtocolMessage(AiMessageType.None)]
     public class AiProtocolMessage {
         [JsonIgnore]
@@ -189,8 +195,8 @@ namespace AiSync {
 
     /* Base class for status messages */
     public class AiStatusMessage : AiProtocolMessage {
-        [JsonProperty("playing", Required = Required.Always)]
-        public bool IsPlaying { get; set; }
+        [JsonProperty("state", Required = Required.Always)]
+        public PlayingState State { get; set; }
 
         [JsonProperty("position", Required = Required.Always)]
         public long Position { get; set; }

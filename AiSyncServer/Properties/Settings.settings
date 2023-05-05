@@ -8,7 +8,7 @@
     <Setting Name="DataPort" Type="System.UInt16" Scope="User">
       <Value Profile="(Default)">28524</Value>
     </Setting>
-    <Setting Name="ExtraLatency" Type="System.UInt64" Scope="User">
+    <Setting Name="ExtraLatency" Type="System.Int32" Scope="User">
       <Value Profile="(Default)">0</Value>
     </Setting>
   </Settings>

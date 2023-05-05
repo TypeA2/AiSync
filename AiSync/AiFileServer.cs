@@ -2,13 +2,14 @@
 using System.IO.MemoryMappedFiles;
 using Ceen.Httpd;
 using Ceen;
-using System.Diagnostics;
 
 namespace AiSync {
     public class AiServeSingleFile : IHttpModule, IWithShutdown {
         private readonly string mime;
         private readonly FileInfo finfo;
         private readonly MemoryMappedFile file;
+
+        public int Delay { get; set; }
 
         public AiServeSingleFile(string path, string mime) {
             this.mime = mime;
@@ -20,14 +21,18 @@ namespace AiSync {
             return Task.Run(file.Dispose);
         }
 
-        public Task<bool> HandleAsync(IHttpContext ctx) {
+        public async Task<bool> HandleAsync(IHttpContext ctx) {
             try {
+                if (Delay > 0) {
+                    //await Task.Delay(Delay);
+                }
+
                 IHttpRequest request = ctx.Request;
                 IHttpResponse response = ctx.Response;
 
                 if (!ValidateRequest(request, out long start, out long end)) {
                     response.StatusCode = Ceen.HttpStatusCode.UnprocessableEntity;
-                    return Task.FromResult(false); 
+                    return false; 
                 }
 
                 long length = end - start;
@@ -45,13 +50,12 @@ namespace AiSync {
 
                 /* Read as needed */
                 using MemoryMappedViewStream accessor = file.CreateViewStream(start, length, MemoryMappedFileAccess.Read);
-                //await accessor.CopyToAsync(response.GetResponseStream());
                 accessor.CopyTo(response.GetResponseStream());
             } catch (IOException) {
                 /* Socket closed, ignore, this is okay (kind of) */
             }
 
-            return Task.FromResult(true);
+            return true;
         }
 
         private bool ValidateRequest(IHttpRequest request, out long start, out long end) {
@@ -100,12 +104,20 @@ namespace AiSync {
         private readonly CancellationTokenSource cts = new();
         private readonly Task server;
 
+        public int Delay {
+            set => route.Delay = value;
+        }
+
+        private readonly AiServeSingleFile route;
+
         public AiFileServer(IPAddress addr, ushort port, string file, string mime)
             : this(new IPEndPoint(addr, port), file, mime) { }
 
         public AiFileServer(IPEndPoint endpoint, string file, string mime) {
+            route = new AiServeSingleFile(file, mime);
+
             ServerConfig cfg = new();
-            cfg.AddRoute("/", new AiServeSingleFile(file, mime));
+            cfg.AddRoute("/", route);
 
             server = HttpServer.ListenAsync(endpoint, false, cfg, cts.Token);
         }

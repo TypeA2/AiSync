@@ -1,17 +1,8 @@
 ﻿using AiSync;
 
-using LibVLCSharp.Shared;
-
-using HeyRed.Mime;
-
 using System;
-using System.IO;
-using System.Net;
-using System.Text.RegularExpressions;
 using System.Windows;
-using System.Windows.Input;
 using System.Windows.Media;
-using System.Windows.Controls;
 using System.Windows.Media.Imaging;
 using System.Diagnostics.CodeAnalysis;
 
@@ -52,7 +43,11 @@ namespace AiSyncServer {
                 .SetMinimumLevel(Microsoft.Extensions.Logging.LogLevel.Debug);
         });
 
+        private readonly ILogger _logger;
+
         public ServerWindow() {
+            _logger = _logger_factory.CreateLogger("ServerWindow");
+
             InitializeComponent();
         }
 
@@ -60,7 +55,7 @@ namespace AiSyncServer {
             UploadFileImage.Source = UploadFile.IsEnabled ? upload_image : upload_disabled_image;
             StopImage.Source = Stop.IsEnabled ? stop_image : stop_disabled_image;
 
-            if (ServersRunning && CommServer.Playing) {
+            if (ServersRunning && CommServer.State == PlayingState.Playing) {
                 PlayPauseImage.Source = PlayPause.IsEnabled ? pause_image : pause_disabled_image;
             } else {
                 PlayPauseImage.Source = PlayPause.IsEnabled ? play_image : play_disabled_image;
@@ -110,7 +105,7 @@ namespace AiSyncServer {
 
             CurrentPos.Text = AiSync.Utils.FormatTime(
                 ms,
-                always_hours: (CommServer.Duration.GetValueOrDefault()) >= (3600 * 1000),
+                always_hours: (CommServer.Duration) >= (3600 * 1000),
                 ms_prec: 3);
         }
 
