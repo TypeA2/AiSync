@@ -21,11 +21,11 @@ namespace AiSyncClient {
         }
 
         public static SyncResponse ReplyWith<T>(this SyncRequest req) where T : AiProtocolMessage, new() {
-            return new SyncResponse(req, new T().Serialize());
+            return new SyncResponse(req, new T().AiSerialize());
         }
 
         public static SyncResponse ReplyWith<T>(this SyncRequest req, T msg) where T : AiProtocolMessage {
-            return new SyncResponse(req, msg.Serialize());
+            return new SyncResponse(req, msg.AiSerialize());
         }
 
         public static long PositionMs(this MediaPlayer player) {

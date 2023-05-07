@@ -4,7 +4,15 @@ using System.Text;
 
 namespace AiSync {
     public static class AiProtocol {
-        public static string Serialize<T>(this T obj) where T : AiProtocolMessage {
+        public static string AiSerialize<T>(this T obj) where T : AiProtocolMessage {
+            return JsonConvert.SerializeObject(obj);
+        }
+
+        public static string AiSerialize(this object obj, Type type) {
+            if (!type.IsAssignableTo(typeof(AiProtocolMessage))) {
+                throw new ArgumentException($"Cannot assign {type.Name} to {typeof(AiProtocolMessage).Name}");
+            }
+
             return JsonConvert.SerializeObject(obj);
         }
 
@@ -57,6 +65,8 @@ namespace AiSync {
         FileClosed,
 
         ServerReady,
+        ClientReady,
+
         ServerClosed,
 
         ClientRequestsPause,
@@ -126,10 +136,6 @@ namespace AiSync {
     /* The playback file is ready on the data server */
     [AiProtocolMessage(AiMessageType.FileReady)]
     public class AiFileReady : AiProtocolMessage {
-        public static AiFileReady FromCloseEnough(long val) {
-            return new AiFileReady() { CloseEnoughValue = val };
-        }
-
         [JsonProperty("close_enough_value", Required = Required.Always)]
         public long CloseEnoughValue { get; set; }
     }
@@ -145,6 +151,10 @@ namespace AiSync {
     /* Server is ready, clients can begin control */
     [AiProtocolMessage(AiMessageType.ServerReady)]
     public class AiServerReady : AiProtocolMessage { }
+
+    /* Client positive reply */
+    [AiProtocolMessage(AiMessageType.ClientReady)]
+    public class AiClientReady : AiProtocolMessage { }
 
     /* Server shutting down */
     [AiProtocolMessage(AiMessageType.ServerClosed)]

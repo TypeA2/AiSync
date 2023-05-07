@@ -1,7 +1,8 @@
 ﻿using System.Numerics;
 using System.Reflection;
-using System.Security.Cryptography;
 using System.Text;
+
+using WatsonTcp;
 
 namespace AiSync {
     public static class Utils {
@@ -125,6 +126,18 @@ namespace AiSync {
                     .Select(f => f.GetValue(src) as Task)
                     .WhereNotNull()
                     .ToList();
+        }
+
+        public static SyncResponse ReplyWith<T>(this SyncRequest req) where T : AiProtocolMessage, new() {
+            return new SyncResponse(req, new T().AiSerialize());
+        }
+
+        public static SyncResponse ReplyWith<T>(this SyncRequest req, T msg) where T : AiProtocolMessage {
+            return new SyncResponse(req, msg.AiSerialize());
+        }
+
+        public static SyncResponse ReplyWith(this SyncRequest req, object msg, Type type) {
+            return new SyncResponse(req, msg.AiSerialize(type));
         }
     }
 }

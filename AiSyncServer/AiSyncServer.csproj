@@ -33,7 +33,7 @@
     <PackageReference Include="Microsoft.Extensions.Logging.Debug" Version="7.0.0" />
     <PackageReference Include="MimeTypesMap" Version="1.0.8" />
     <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.18" />
-    <PackageReference Include="WatsonTcp" Version="5.1.1" />
+    <PackageReference Include="WatsonTcp" Version="5.1.2" />
   </ItemGroup>
 
   <ItemGroup>

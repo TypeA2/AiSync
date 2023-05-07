@@ -16,6 +16,7 @@ using LibVLCSharp.Shared;
 using System.Diagnostics.CodeAnalysis;
 using HeyRed.Mime;
 using System.Windows.Threading;
+using System.Timers;
 
 namespace AiSyncServer {
     internal enum AiConnectionState {
@@ -120,9 +121,12 @@ namespace AiSyncServer {
 
         public int ClientCount { get => _clients.Count; }
 
-        public static long CloseEnoughValue { get => 1500; }
+        public static long CloseEnoughValue => 1500;
+        public static int Timeout => 1000;
 
         private readonly ManualResetEventSlim close_event = new();
+
+        private readonly object control_lock = new();
 
         public AiServer(ILoggerFactory fact, IPEndPoint comm_endpoint, IPEndPoint data_endpoint) {
             _logger_factory = fact;
@@ -318,20 +322,6 @@ namespace AiSyncServer {
             /* Start data server */
             data_server = new AiFileServer(data_endpoint, path, mime);
 
-            /* Notify all clients and wait */
-            (Guid guid, bool success)[] results = await Task.WhenAll(Clients.Select(SendAndWaitNewFileAsync).ToArray());
-                    
-            /* Remove all failed clients */
-            foreach (Guid guid in results.Where(result => !result.success).Select(result => result.guid)) {
-                _logger.LogInformation("Removing {} for failing to reply", guid);
-                server.DisconnectClient(guid);
-            }
-
-            _logger.LogInformation("All clients ready to play");
-
-            /* Tell all clients the server is ready */
-            await SendToAll<AiServerReady>();
-
             /* Start status polling thread */
             AiPlaybackTimer timer = new(_logger_factory, parsed.Duration, 75, 100);
             timer.PositionChanged += async (o, e) => {
@@ -343,46 +333,108 @@ namespace AiSyncServer {
                 PositionChanged?.Invoke(o, e);
             };
 
-            timer.PlayingChanged += async (o, e) => {
+            timer.PlayingChanged += OnPlayingChanged;
+
+            media = new ServerMedia(media_source, parsed, timer);
+
+            /* Lock controls, so even if a client responds before all clients have responded, it'll wait safely */
+            lock (control_lock) {
+                /* Notify all clients and wait */
+                foreach (MessageResponse<AiFileParsed> response
+                            in SendAndExpectAll<AiFileReady, AiFileParsed>(
+                                new AiFileReady() { CloseEnoughValue = CloseEnoughValue })) {
+                    if (!response) {
+                        _logger.LogInformation("{} failed to reply to new file", response.Guid);
+                        server.DisconnectClient(response.Guid);
+                    }
+                }
+
+                _logger.LogInformation("All clients ready to play");
+
+                /* Tell all clients the server is ready */
+                SendAndExpectAll<AiServerReady, AiClientReady>();
+            }
+        }
+
+        private void OnPlayingChanged(object? sender, PlayingChangedEventArgs e) {
+            if (sender is null) {
+                return;
+            }
+
+            lock (control_lock) {
+                AiPlaybackTimer timer = (AiPlaybackTimer)sender;
                 _logger.LogInformation("New playing state: {}", e.State);
                 switch (e.State) {
                     case PlayingState.Stopped: {
                         /* EOF or manual stop -> close file */
-                        await SendToAll<AiFileClosed>();
+                        SendAndExpectAll<AiFileClosed, AiClientReady>();
 
-                        await Task.Run(() => {
+                        /* Run on different thread to prevent deadlock */
+                        Task.Run(() => {
                             data_server?.Dispose();
                             data_server = null;
 
                             media?.Dispose();
                             media = null;
-                        });
+                        }).Wait();
                         break;
                     }
 
                     case PlayingState.Playing: {
-                        await SendToAll(new AiServerRequestsPlay() { Position = timer.Position });
+                        SendAndExpectAll<AiServerRequestsPlay, AiClientReady>(new() { Position = timer.Position });
                         break;
                     }
 
                     case PlayingState.Paused: {
-                        await SendToAll(new AiServerRequestsPause() { Position = timer.Position });
+                        SendAndExpectAll<AiServerRequestsPause, AiClientReady>(new() { Position = timer.Position });
                         break;
                     }
                 }
 
-                PlayingChanged?.Invoke(o, e);
-            };
-
-            media = new ServerMedia(media_source, parsed, timer);
+                PlayingChanged?.Invoke(sender, e);
+            }
         }
 
-        private Resp SendAndExpectMsg<Msg, Resp>(int ms, Guid guid, Msg src)
+        private record struct MessageResponse<Msg>(Guid Guid, Msg? Response) where Msg : AiProtocolMessage {
+            public static implicit operator bool(MessageResponse<Msg> resp) => resp.Response is not null;
+        }
+
+        /* Returns all clients that failed to respond */
+        private IEnumerable<MessageResponse<Resp>> SendAndExpectAll<Msg, Resp>(Msg? src = null)
+            where Msg : AiProtocolMessage, new()
+            where Resp : AiProtocolMessage {
+
+            src ??= new();
+
+            IEnumerable<Task<MessageResponse<Resp>>> tasks = Clients.Select((guid) => {
+                return Task.Run(() => SendAndExpectMsg<Msg, Resp>(guid, src) );
+            });
+
+            Task.WhenAll(tasks).Wait();
+
+            return tasks.Select(t => t.Result);
+        }
+
+        private MessageResponse<Resp> SendAndExpectMsg<Msg, Resp>(ClientMetadata client, Msg src)
+            where Msg : AiProtocolMessage 
+            where Resp : AiProtocolMessage {
+            return SendAndExpectMsg<Msg, Resp>(client.Guid, src);
+        }
+
+        private MessageResponse<Resp> SendAndExpectMsg<Msg, Resp>(Guid guid, Msg src)
             where Msg : AiProtocolMessage
             where Resp : AiProtocolMessage {
-            SyncResponse response = server.SendAndWait(ms, guid, src.Serialize());
+            try {
+                SyncResponse response = server.SendAndWait(Timeout, guid, src.AiSerialize());
 
-            return response.Data.ToUtf8().AiDeserialize<Resp>();
+                return new MessageResponse<Resp>(guid, response.Data.ToUtf8().AiDeserialize<Resp>());
+            } catch (TimeoutException) {
+
+            } catch (InvalidMessageException) {
+
+            }
+
+            return new MessageResponse<Resp>(guid, null);
         }
 
         /* Return all failed clients */
@@ -395,38 +447,12 @@ namespace AiSyncServer {
         }
 
         private async Task<bool> SendMessage<T>(Guid guid, T? msg = null) where T : AiProtocolMessage, new() {
-            if (Delay > 0) {
-                // await Task.Delay(Delay);
-            }
-
-            return await server.SendAsync(guid, (msg ?? new T()).Serialize());
-        }
-
-        private (Guid, bool) SendAndWaitNewFile(Guid guid) {
-            /* Notify client of new file, wait at most 1 minute for a response */
-            try {
-                SendAndExpectMsg<AiFileReady, AiFileParsed>(60 * 1000, guid, AiFileReady.FromCloseEnough(CloseEnoughValue));
-
-                /* No exception means this client is ready */
-                return (guid, true);
-
-            /* Consume exceptions that indicate failure */
-            } catch (TimeoutException) {
-                
-            } catch (InvalidMessageException) {
-
-            }
-
-            return (guid, false);
-        }
-
-        private Task<(Guid, bool)> SendAndWaitNewFileAsync(Guid guid) {
-            return Task.Run(() => SendAndWaitNewFile(guid));
+            return await server.SendAsync(guid, (msg ?? new T()).AiSerialize());
         }
 
         private AiClientStatus? GetClientStatus(Guid guid) {
             try {
-                return SendAndExpectMsg<AiServerRequestsStatus, AiClientStatus>(5 * 1000, guid, new());
+                return SendAndExpectMsg<AiServerRequestsStatus, AiClientStatus>(guid, new()).Response;
             } catch (TimeoutException) {
                 
             } catch (InvalidMessageException) {
@@ -437,28 +463,11 @@ namespace AiSyncServer {
         }
 
         private void OnMessageReceived(object? sender, MessageReceivedEventArgs e) {
-            string str = e.Data.ToUtf8();
-            AiMessageType type = str.AiJsonMessageType();
-
-            Delegate handler = str.AiJsonMessageType() switch {
-                AiMessageType.ClientRequestsPause => HandleClientRequestsPause,
-                AiMessageType.ClientRequestsPlay => HandleClientRequestsPlay,
-                AiMessageType.ClientRequestsSeek => HandleClientRequestsSeek,
-                AiMessageType.PauseResync => HandlePauseRsync,
-                _ => HandleDefault,
-            };
-
-            ParameterInfo[] handler_params = handler.GetMethodInfo().GetParameters();
-
-            /* Should never happen */
-            if (handler_params.Length != 1 || !handler_params[0].ParameterType.IsAssignableTo(typeof(AiProtocolMessage))) {
-                throw new ArgumentException("invalid delegate");
-            }
-
-            handler.DynamicInvoke(str.AiDeserialize(handler_params[0].ParameterType));
+            /* Ignore */
+            _logger.LogInformation("Message received from {}: {}", e.Client, e.Data.ToUtf8());
         }
 
-        private async void OnClientConnected(object? sender, ConnectionEventArgs e) {
+        private void OnClientConnected(object? sender, ConnectionEventArgs e) {
             _logger.LogInformation("Client connected: {}, {} total", e.Client.Guid, ClientCount);
 
             lock (_clients) {
@@ -468,26 +477,24 @@ namespace AiSyncServer {
             ClientConnected?.Invoke(this, EventArgs.Empty);
 
             if (media is not null) {
-                _logger.LogInformation("Sending status to {}", e.Client.Guid);
+                lock (control_lock) {
+                    if (!SendAndExpectMsg<AiFileReady, AiFileParsed>(e.Client, new() { CloseEnoughValue = CloseEnoughValue })) {
+                        _logger.LogInformation("Client rejected: {}", e.Client.Guid);
+                        server.DisconnectClient(e.Client.Guid);
+                    }
 
-                (Guid _, bool success) = await SendAndWaitNewFileAsync(e.Client.Guid);
-                if (success) {
-                    await SendMessage<AiServerReady>(e.Client.Guid);
+                    SendAndExpectMsg<AiServerReady, AiClientReady>(e.Client, new());
+
+                    _logger.LogInformation("Sending status to {}", e.Client.Guid);
 
                     long pos = media.Position;
                     if (media.State == PlayingState.Playing) {
                         _logger.LogDebug("Playing new client at {}", pos);
-                        await SendMessage(e.Client.Guid, new AiServerRequestsPlay() { Position = pos });
+                        SendAndExpectMsg<AiServerRequestsPlay, AiClientReady>(e.Client, new() { Position = pos });
                     } else {
                         _logger.LogDebug("Pausing new client at {}", pos);
-                        await SendMessage(e.Client.Guid, new AiServerRequestsPause() { Position = pos });
+                        SendAndExpectMsg<AiServerRequestsPause, AiClientReady>(e.Client, new() { Position = pos });
                     }
-
-                } else if (success) {
-                    _logger.LogInformation("Client rejected: {}", e.Client.Guid);
-                    server.DisconnectClient(e.Client.Guid);
-                    return;
-
                 }
             }
         }
@@ -504,22 +511,43 @@ namespace AiSyncServer {
 
         private SyncResponse OnSyncRequestReceived(SyncRequest req) {
             string str = req.Data.ToUtf8();
-            AiMessageType type = str.AiJsonMessageType();
 
-            switch (type) {
-                case AiMessageType.GetStatus: {
-                    _logger.LogDebug("Client requests status");
-                    return req.ReplyWith(new AiServerStatus() {
-                        State = media?.State ?? PlayingState.Stopped,
-                        Position = media?.Position ?? 0,
-                        Timestamp = DateTime.UtcNow,
-                    });
-                }
+            Delegate handler = str.AiJsonMessageType() switch {
+                AiMessageType.GetStatus => HandleGetStatus,
+                _ => HandleDefault,
+            };
 
-                default:
-                    throw new InvalidMessageException(str.AiDeserialize<AiProtocolMessage>());
+            MethodInfo handler_method = handler.GetMethodInfo();
+            ParameterInfo[] handler_params = handler_method.GetParameters();
+
+            /* Should never happen */
+            if (!handler_method.ReturnType.IsAssignableTo(typeof(AiProtocolMessage))
+                || handler_params.Length != 2
+                || !handler_params[0].ParameterType.IsAssignableTo(typeof(Guid))
+                || !handler_params[1].ParameterType.IsAssignableTo(typeof(AiProtocolMessage))) {
+                throw new ArgumentException("invalid delegate");
+            }
+
+            object? response = handler.DynamicInvoke(req.Client.Guid, str.AiDeserialize(handler_params[1].ParameterType));
+
+            if (response == null) {
+                /* How? */
+                return req.ReplyWith(new AiProtocolMessage());
+            } else {
+                return req.ReplyWith(response, handler_method.ReturnType);
             }
         }
+
+        private AiServerStatus HandleGetStatus(Guid client, AiGetStatus msg) {
+            _logger.LogDebug("Client requests status");
+
+            return new() {
+                State = media?.State ?? PlayingState.Stopped,
+                Position = media?.Position ?? 0,
+                Timestamp = DateTime.UtcNow,
+            };
+        }
+
 
         private void HandleClientRequestsPause(AiClientRequestsPause msg) {
             _logger.LogDebug("ClientRequestsPause: {}", msg.Position);
@@ -620,9 +648,9 @@ namespace AiSyncServer {
             during_resync = false;
         }
 
-        private void HandleDefault(Guid client, AiProtocolMessage msg) {
+        private AiProtocolMessage HandleDefault(Guid client, AiProtocolMessage msg) {
             _logger.LogCritical("Unexpected message of type {} from {}", msg.Type, client);
-            throw new InvalidMessageException(msg);
+            return new();
         }
     }
 }
