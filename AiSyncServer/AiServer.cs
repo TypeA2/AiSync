@@ -327,7 +327,7 @@ namespace AiSyncServer {
             timer.PositionChanged += async (o, e) => {
                 if (e.IsSeek) {
                     _logger.LogDebug("New position: {} (seek: {})", AiSync.Utils.FormatTime(e.Position), e.IsSeek);
-                    await SendToAll(new AiServerRequestSeek() { Target = e.Position });
+                    SendAndExpectAll<AiServerRequestSeek, AiClientReady>(new() { Target = e.Position });
                 }
 
                 PositionChanged?.Invoke(o, e);
@@ -376,7 +376,7 @@ namespace AiSyncServer {
 
                             media?.Dispose();
                             media = null;
-                        }).Wait();
+                        });
                         break;
                     }
 
@@ -395,9 +395,7 @@ namespace AiSyncServer {
             }
         }
 
-        private record struct MessageResponse<Msg>(Guid Guid, Msg? Response) where Msg : AiProtocolMessage {
-            public static implicit operator bool(MessageResponse<Msg> resp) => resp.Response is not null;
-        }
+        
 
         /* Returns all clients that failed to respond */
         private IEnumerable<MessageResponse<Resp>> SendAndExpectAll<Msg, Resp>(Msg? src = null)
@@ -514,6 +512,9 @@ namespace AiSyncServer {
 
             Delegate handler = str.AiJsonMessageType() switch {
                 AiMessageType.GetStatus => HandleGetStatus,
+                AiMessageType.ClientRequestsPause => HandleClientRequestsPause,
+                AiMessageType.ClientRequestsPlay => HandleClientRequestsPlay,
+                AiMessageType.ClientRequestsSeek => HandleClientRequestsSeek,
                 _ => HandleDefault,
             };
 
@@ -548,72 +549,68 @@ namespace AiSyncServer {
             };
         }
 
-
-        private void HandleClientRequestsPause(AiClientRequestsPause msg) {
+        private AiServerReady HandleClientRequestsPause(Guid client, AiClientRequestsPause msg) {
             _logger.LogDebug("ClientRequestsPause: {}", msg.Position);
             if (media is null) {
-                return;
+                return new();
             }
 
-            if (during_resync) {
-                _logger.LogInformation("Discarding pause because a resync is happening");
-                return;
+            if (control_lock.TryLock()) {
+                /* Use server position if <0 */
+                long pos = (msg.Position < 0) ? media.Position : msg.Position;
+
+                PauseMedia(pos);
+
+                control_lock.Unlock();
             }
 
-            /* Use server position if <0 */
-            long pos = (msg.Position < 0) ? media.Position : msg.Position;
-
-            _logger.LogInformation("Pause requested at {}", AiSync.Utils.FormatTime(pos));
-
-            PauseMedia(pos);
+            return new();
         }
 
-        private void HandleClientRequestsPlay(AiClientRequestsPlay msg) {
+        private AiServerReady HandleClientRequestsPlay(Guid client, AiClientRequestsPlay msg) {
             _logger.LogDebug("ClientRequestsPlay: {}", msg.Position);
             if (media is null) {
-                return;
+                return new();
             }
 
-            if (during_resync) {
-                _logger.LogInformation("Discarding play because a resync is happening");
-                return;
+            if (control_lock.TryLock()) {
+                /* Use server position if <0 */
+                long pos = (msg.Position < 0) ? media.Position : msg.Position;
+
+                PlayMedia(pos);
+
+                control_lock.Unlock();
             }
 
-            /* Use server position if <0 */
-            long pos = (msg.Position < 0) ? media.Position : msg.Position;
-
-            _logger.LogInformation("Play requested at {}", AiSync.Utils.FormatTime(pos));
-
-            PlayMedia(pos);
+            return new();
         }
 
-        private void HandleClientRequestsSeek(AiClientRequestSeek msg) {
+        private AiServerReady HandleClientRequestsSeek(Guid client, AiClientRequestSeek msg) {
             _logger.LogDebug("ClientRequestsSeek: {}", msg.Target);
             if (media is null) {
-                return;
+                return new();
             }
 
-            if (during_resync) {
-                _logger.LogInformation("Discarding seek because a resync is happening");
-                return;
+            if (control_lock.TryLock()) {
+                /* Seek to server pos if <0 */
+                long target = (msg.Target < 0) ? media.Position : msg.Target;
+
+                /* Some weird desyncs happen when just seeking, but this fixes it */
+                bool was_playing = media.State == PlayingState.Playing;
+                if (was_playing) {
+                    PauseMedia(target);
+                }
+
+                SeekMedia(target);
+
+                if (was_playing) {
+                    PlayMedia(target);
+                }
+
+                control_lock.Unlock();
             }
 
-            /* Seek to server pos if <0 */
-            long target = (msg.Target < 0) ? media.Position : msg.Target;
-
-            _logger.LogInformation("Seek requested to {}", AiSync.Utils.FormatTime(msg.Target));
-
-            /* Some weird desyncs happen when just seeking, but this fixes it */
-            bool was_playing = media.State == PlayingState.Playing;
-            if (was_playing) {
-                PauseMedia(target);
-            }
-
-            SeekMedia(target);
-
-            if (was_playing) {
-                PlayMedia(target);
-            }
+            return new();
         }
 
         private async void HandlePauseRsync(AiPauseResync msg) {

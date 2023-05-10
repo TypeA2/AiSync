@@ -1,5 +1,7 @@
 ﻿using AiSync;
 
+using LibVLCSharp.Shared;
+
 using Microsoft.Extensions.Logging;
 
 using System;
@@ -48,6 +50,8 @@ namespace AiSyncClient {
 
         public bool IsConnected => client.Connected;
 
+        public static int Timeout => 1000;
+
         private readonly ILogger _logger;
 
         private readonly WatsonTcpClient client;
@@ -58,20 +62,38 @@ namespace AiSyncClient {
 
         public AiClient(ILoggerFactory fact, IPAddress addr, ushort port) : this(fact, new IPEndPoint(addr, port)) { }
 
+        private Resp? SendAndExpectMsg<Msg, Resp>(Msg? src)
+            where Msg : AiProtocolMessage, new()
+            where Resp : AiProtocolMessage {
+            try {
+                src ??= new();
+
+                SyncResponse response = client.SendAndWait(Timeout, src.AiSerialize());
+
+                return response.Data.ToUtf8().AiDeserialize<Resp>();
+            } catch (TimeoutException) {
+
+            } catch (InvalidMessageException) {
+
+            }
+
+            return null;
+        }
+
         public AiClient(ILoggerFactory fact, IPEndPoint endpoint) {
             _logger = fact.CreateLogger("AiClient");
 
             client = new WatsonTcpClient(endpoint.Address.ToString(), endpoint.Port);
             client.Settings.Logger = (level, msg) => {
                 _logger.Log(level switch {
-                    Severity.Debug => LogLevel.Debug,
-                    Severity.Info => LogLevel.Information,
-                    Severity.Warn => LogLevel.Warning,
-                    Severity.Error => LogLevel.Error,
-                    Severity.Alert => LogLevel.Warning,
-                    Severity.Critical => LogLevel.Critical,
-                    Severity.Emergency => LogLevel.Critical,
-                    _ => LogLevel.Warning
+                    Severity.Debug => Microsoft.Extensions.Logging.LogLevel.Debug,
+                    Severity.Info => Microsoft.Extensions.Logging.LogLevel.Information,
+                    Severity.Warn => Microsoft.Extensions.Logging.LogLevel.Warning,
+                    Severity.Error => Microsoft.Extensions.Logging.LogLevel.Error,
+                    Severity.Alert => Microsoft.Extensions.Logging.LogLevel.Warning,
+                    Severity.Critical => Microsoft.Extensions.Logging.LogLevel.Critical,
+                    Severity.Emergency => Microsoft.Extensions.Logging.LogLevel.Critical,
+                    _ => Microsoft.Extensions.Logging.LogLevel.Warning
                 }, "{}", msg);
             };
 
@@ -104,7 +126,7 @@ namespace AiSyncClient {
             return Task.Run(() => {
                 try {
                     client.Connect();
-                } catch (SocketException) {
+                } catch (TimeoutException) {
                     /* pass */
                     _logger.LogWarning("Timed out when connecting to server");
                 }
@@ -123,23 +145,33 @@ namespace AiSyncClient {
             ts = DateTime.Now;
         }
 
-        public async void RequestPause(long pos) {
+        public void RequestPause(long pos) {
             _logger.LogInformation("Sending pause request at {}", AiSync.Utils.FormatTime(pos));
-            await SendMessage(new AiClientRequestsPause() { Position = pos });
+
+            Task.Run(() => {
+                SendAndExpectMsg<AiClientRequestsPause, AiServerReady>(new() { Position = pos });
+            });
         }
 
-        public async void RequestPlay(long pos) {
+        public void RequestPlay(long pos) {
             _logger.LogInformation("Sending play request at {}", AiSync.Utils.FormatTime(pos));
-            await SendMessage(new AiClientRequestsPlay() { Position = pos });
+
+            Task.Run(() => {
+                SendAndExpectMsg<AiClientRequestsPlay, AiServerReady>(new() { Position = pos });
+            });
         }
 
-        public async void RequestSeek(long target) {
+        public void RequestSeek(long target) {
             _logger.LogInformation("Sending seek request to {}", AiSync.Utils.FormatTime(target));
-            await SendMessage(new AiClientRequestSeek() { Target = target });
+
+            Task.Run(() => {
+                SendAndExpectMsg<AiClientRequestSeek, AiServerReady>(new() { Target = target });
+            });
         }
 
         public async void PauseResync() {
             _logger.LogInformation("Resync-pausing");
+            return;
             await SendMessage<AiPauseResync>();
         }
 
@@ -150,6 +182,7 @@ namespace AiSyncClient {
         private void ServerConnected(object? sender, ConnectionEventArgs e) {
             _logger.LogInformation("Connected");
         }
+
         private void ServerDisconnected(object? sender, DisconnectionEventArgs e) {
             _logger.LogInformation("Disconnected, reason: {}", e.Reason);
             Disconnected?.Invoke(this, EventArgs.Empty);

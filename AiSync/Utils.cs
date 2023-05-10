@@ -139,5 +139,22 @@ namespace AiSync {
         public static SyncResponse ReplyWith(this SyncRequest req, object msg, Type type) {
             return new SyncResponse(req, msg.AiSerialize(type));
         }
+
+        public static bool IsLocked(this object obj) {
+            if (Monitor.TryEnter(obj, 0)) {
+                Monitor.Exit(obj);
+                return false;
+            }
+
+            return true;
+        }
+
+        public static bool TryLock(this object obj) {
+            return Monitor.TryEnter(obj, 0);
+        }
+
+        public static void Unlock(this object obj) {
+            Monitor.Exit(obj);
+        }
     }
 }

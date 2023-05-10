@@ -55,10 +55,6 @@ namespace AiSyncClient {
 
             Player.EndReached += (_, _) => Dispatcher.Invoke(() => {
                 _logger.LogInformation("End reached");
-
-                Media?.Dispose();
-                Player.Media = null;
-                SetNoMedia();
             });
 
             Player.PositionChanged += (_, _) => Dispatcher.Invoke(Player_PositionChanged);

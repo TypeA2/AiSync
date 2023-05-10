@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "AiSyncServer": {
+      "commandName": "Project",
+      "nativeDebugging": false
+    }
+  }
+}
