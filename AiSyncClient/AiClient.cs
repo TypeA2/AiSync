@@ -145,34 +145,32 @@ namespace AiSyncClient {
             ts = DateTime.Now;
         }
 
-        public void RequestPause(long pos) {
+        public async void RequestPause(long pos) {
             _logger.LogInformation("Sending pause request at {}", AiSync.Utils.FormatTime(pos));
 
-            Task.Run(() => {
+            await Task.Run(() => {
                 SendAndExpectMsg<AiClientRequestsPause, AiServerReady>(new() { Position = pos });
             });
         }
 
-        public void RequestPlay(long pos) {
+        public async void RequestPlay(long pos) {
             _logger.LogInformation("Sending play request at {}", AiSync.Utils.FormatTime(pos));
 
-            Task.Run(() => {
+            await Task.Run(() => {
                 SendAndExpectMsg<AiClientRequestsPlay, AiServerReady>(new() { Position = pos });
             });
         }
 
-        public void RequestSeek(long target) {
+        public async void RequestSeek(long target) {
             _logger.LogInformation("Sending seek request to {}", AiSync.Utils.FormatTime(target));
 
-            Task.Run(() => {
+            await Task.Run(() => {
                 SendAndExpectMsg<AiClientRequestSeek, AiServerReady>(new() { Target = target });
             });
         }
 
-        public async void PauseResync() {
+        public void PauseResync() {
             _logger.LogInformation("Resync-pausing");
-            return;
-            await SendMessage<AiPauseResync>();
         }
 
         private Task SendMessage<T>(T? msg = null) where T : AiProtocolMessage, new() {

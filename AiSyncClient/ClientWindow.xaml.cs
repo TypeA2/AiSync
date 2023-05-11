@@ -7,7 +7,7 @@ using LibVLCSharp.Shared;
 using Microsoft.Extensions.Logging;
 
 using System;
-using System.Diagnostics;
+using System.Collections.Generic;
 using System.Diagnostics.CodeAnalysis;
 using System.Net;
 using System.Text;
@@ -66,6 +66,15 @@ namespace AiSyncClient {
         private bool hide_ui_cancelled = false;
         private int hide_ui_sleep = 0;
         private DateTime hide_ui_last_start;
+
+        private readonly Dictionary<(int id, TrackType type), MediaTrackMenuItem> menu = new();
+
+        private ItemCollection MenuItemsFor(TrackType type) => type switch {
+            TrackType.Audio => AudioStreams.Items,
+            TrackType.Video => VideoStreams.Items,
+            TrackType.Text => SubtitleStreams.Items,
+            _ => throw new ArgumentException($"Unexpected track type {type}"),
+        };
 
         private const int hide_ui_delay = 1250;
 
@@ -486,9 +495,9 @@ namespace AiSyncClient {
                 throw new InvalidOperationException("Attempted to load media for null player");
             }
 
-            Player.Media = new Media(VLC, $"http://{Address.Text}:{DataPort.Text}/", FromType.FromLocation);
+            Media media = new(VLC, $"http://{Address.Text}:{DataPort.Text}/", FromType.FromLocation);
 
-            Player.Media.DurationChanged +=
+            media.DurationChanged +=
                     (_, e) => Dispatcher.Invoke(() => {
                         string duration_str = AiSync.Utils.FormatTime(e.Duration, false);
                         Duration.Text = duration_str;
@@ -496,99 +505,38 @@ namespace AiSyncClient {
                         UpdateCurrentPosition();
                     });
 
-            await Player.Media.Parse(MediaParseOptions.ParseNetwork);
+            media.SubItemAdded += (_, e) => {
+                _logger.LogInformation("A Subitems: {}", media.SubItems);
+            };
+
+            media.SubItemTreeAdded += (_, e) => {
+                _logger.LogInformation("B Subitems: {}", media.SubItems);
+            };
+
+
+            await media.Parse(MediaParseOptions.ParseNetwork);
+
+            _logger.LogInformation("Parsed: {}", media.IsParsed);
+
+            Player.Media = media;
 
             Player.Volume = (int)Math.Round(Volume.Value);
 
-            MakeContextMenu();
+            VideoStreams.Items.Clear();
+            AudioStreams.Items.Clear();
+            SubtitleStreams.Items.Clear();
+
+            menu.Clear();
 
             LastAction.Text = "Media loaded";
             ServerStatus.Text = "New media";
 
             CommClient.FileParsed();
             SetDefaulPlayback();
-        }
 
-        private static string GetTrackHeader(MediaTrack track, int idx) {
-            bool has_language = (track.Language is not null && track.Language != "und");
-
-            StringBuilder sb = new();
-
-            if (track.Description is not null) {
-                /* {description}( - [{language}]) */
-                sb.Append(track.Description);
-            } else {
-                /* Track {n}( - [{language}]) */
-                sb.Append($"Track {idx + 1}");
-            }
-
-            if (has_language) {
-                sb.Append($" - [{track.Language}]");
-            }
-
-            return sb.ToString();
-        }
-
-        private void MakeContextMenu() {
-            if (!HasMedia) {
-                return;
-            }
-
-            VideoStreams.Items.Clear();
-            AudioStreams.Items.Clear();
-            SubtitleStreams.Items.Clear();
-
-            var list = Media.SubItems;
-            _logger.LogDebug("Subitems: {}", list.Count);
-            foreach (var v in list) {
-                _logger.LogDebug("Media: {}", v.Mrl);
-            }
-
-            foreach (MediaTrack track in Media.Tracks) {
-                switch (track.TrackType) {
-                    case TrackType.Audio: {
-                        MenuItem item = new() {
-                            IsCheckable = true,
-                            IsChecked = AudioStreams.Items.Count == 0,
-                            IsEnabled = false,
-                            Header = GetTrackHeader(track, AudioStreams.Items.Count)
-                        };
-
-                        AudioStreams.Items.Add(item);
-                        break;
-                    }
-
-                    case TrackType.Video: {
-                        MenuItem item = new() {
-                            IsCheckable = true,
-                            IsChecked = VideoStreams.Items.Count == 0,
-                            IsEnabled = false,
-                            Header = GetTrackHeader(track, VideoStreams.Items.Count)
-                        };
-
-                        VideoStreams.Items.Add(item);
-                        break;
-                    }
-
-                    case TrackType.Text: {
-                        MenuItem item = new() {
-                            IsCheckable = true,
-                            IsChecked = SubtitleStreams.Items.Count == 0,
-                            IsEnabled = false,
-                            Header = GetTrackHeader(track, SubtitleStreams.Items.Count)
-                        };
-
-                        SubtitleStreams.Items.Add(item);
-                        break;
-                    }
-                }
-            }
-
-            AudioStreams.IsEnabled = AudioStreams.Items.Count > 0;
-            VideoStreams.IsEnabled = VideoStreams.Items.Count > 0;
-            SubtitleStreams.IsEnabled = SubtitleStreams.Items.Count > 0;
-
-            VideoContextMenu.IsEnabled = true;
+            /* Play and immediately pause to construct context menu */
+            Player.Playing += Player_FirstPlay;
+            Player.Play();
         }
 
         private void ClearContextMenu() {

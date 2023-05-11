@@ -13,6 +13,11 @@ using System.Windows.Controls.Primitives;
 using System.Reflection;
 using Microsoft.Extensions.Logging;
 using AiSyncClient.Properties;
+using System.Linq;
+using System.Threading.Tasks;
+using LibVLCSharp.Shared.Structures;
+using System.Collections.Generic;
+using System.Threading;
 
 namespace AiSyncClient {
     public partial class ClientWindow {
@@ -45,6 +50,11 @@ namespace AiSyncClient {
             UpdateImages();
         }
 
+        private class MediaTrackMenuItem : MenuItem {
+            public TrackType Type { get; set; }
+            public int TrackID { get; set; }
+        }
+
         private void Video_Loaded(object sender, RoutedEventArgs e) {
             Scrubber.Formatter = AutoToolTipFormatter;
             FullscreenScrubber.Formatter = AutoToolTipFormatter;
@@ -65,6 +75,8 @@ namespace AiSyncClient {
                 UpdateImages();
             });
 
+            Player.Playing += SelectDefaultTracks;
+
             Video.MediaPlayer = Player;
 
             /* Hack to get keyboard input for the ForegroundWindow as well */
@@ -79,6 +91,30 @@ namespace AiSyncClient {
                 ?? throw new NullReferenceException("ForegroundWindow getter returned null"));
 
             fgwin.PreviewKeyDown += General_PreviewKeyDown;
+        }
+
+        private void SelectDefaultTracks(object? sender, EventArgs e) {
+            if (!HasMedia) {
+                return;
+            }
+
+            _logger.LogDebug("Default tracks: {} {} {}", Player.AudioTrack, Player.VideoTrack, Player.Spu);
+
+            Dispatcher.Invoke(() => {
+                /* Select currently selected tracks */
+                foreach (((int id, TrackType type), MediaTrackMenuItem item) in menu) {
+                    if (item.IsChecked) {
+                        switch (type) {
+                            case TrackType.Audio: Player.SetAudioTrack(id); break;
+                            case TrackType.Video: Player.SetVideoTrack(id); break;
+                            case TrackType.Text:  Player.SetSpu(id); break;
+                        }
+                    }
+                }
+            });
+
+            /* Disconnect self */
+            Player.Playing -= SelectDefaultTracks;
         }
 
         private void ImageButton_IsEnabledChanged(object sender, DependencyPropertyChangedEventArgs e) {
@@ -321,25 +357,121 @@ namespace AiSyncClient {
                 return;
             }
 
-            AiServerStatus? status = CommClient.GetStatus();
+            /* No syncing for now */
+            return;
 
-            if (status is null) {
-                _logger.LogInformation("Pausing (unreachable server)");
-                Player.Pause();
-                return;
-            }
+            Task.Run(() => {
+                AiServerStatus? status = CommClient.GetStatus();
 
-            if (status.State == PlayingState.Stopped) {
-                _logger.LogInformation("Server stopped, stopping too");
-                return;
-            }
+                if (status is null) {
+                    _logger.LogInformation("Pausing (unreachable server)");
+                    Player.Pause();
+                    return;
+                }
 
-            long delta = status.Position.Difference(Player.PositionMs());
-            if (delta > CommClient.CloseEnoughValue) {
-                _logger.LogDebug("Resync, delta = {}", delta);
-                CommClient.PauseResync();
-            }
+                if (status.State == PlayingState.Stopped) {
+                    _logger.LogInformation("Server stopped, stopping too");
+                    return;
+                }
+
+                long delta = status.Position.Difference(Player.PositionMs());
+                if (delta > CommClient.CloseEnoughValue) {
+                    _logger.LogDebug("Resync, delta = {}", delta);
+                    CommClient.PauseResync();
+                }
+            });
         }
+
+        private void MenuItem_Click(object sender, RoutedEventArgs e) {
+            MediaTrackMenuItem new_item = (MediaTrackMenuItem)sender;
+
+            _logger.LogInformation("Set {} stream to {}", new_item.Type, new_item.TrackID);
+
+            if (HasMedia) {
+                /* Unckeck all other items and check the new item */
+                foreach (MediaTrackMenuItem item in MenuItemsFor(new_item.Type)) {
+                    item.IsChecked = false;
+                }
+
+                switch (new_item.Type) {
+                    case TrackType.Audio: {
+                        Player.SetAudioTrack(new_item.TrackID);
+                        break;
+                    }
+
+                    case TrackType.Video: {
+                        Player.SetVideoTrack(new_item.TrackID);
+                        break;
+                    }
+
+                    case TrackType.Text: {
+                        Player.SetSpu(new_item.TrackID);
+                        break;
+                    }
+                }
+
+                new_item.IsChecked = true;
+            }
+
+            e.Handled = true;
+        }
+
+        private void Player_FirstPlay(object? sender, EventArgs e) {
+            Player.Playing -= Player_FirstPlay;
+            Player.Pause();
+
+            if (menu.Count != 0 || !HasMedia) {
+                return;
+            }
+
+            _logger.LogInformation("First play, constructing context menus");
+            Dispatcher.Invoke(() => {
+                /* All streams have been added */
+                IEnumerable<(TrackType type, TrackDescription desc)> descriptions =
+                            Enumerable.Repeat(TrackType.Audio, Player.AudioTrackCount).Zip(Player.AudioTrackDescription)
+                    .Concat(Enumerable.Repeat(TrackType.Video, Player.VideoTrackCount).Zip(Player.VideoTrackDescription))
+                    .Concat(Enumerable.Repeat(TrackType.Text, Player.SpuCount).Zip(Player.SpuDescription));
+
+                foreach ((TrackType type, TrackDescription desc) in descriptions) {
+                    _logger.LogInformation("Track {}: {} ({})", desc.Id, desc.Name, type);
+
+                    MediaTrackMenuItem item = new() {
+                        IsCheckable = true,
+                        Header = desc.Name,
+                        Type = type,
+                        TrackID = desc.Id,
+                    };
+
+                    item.Click += MenuItem_Click;
+
+                    MenuItemsFor(type).Add(item);
+                    menu.Add((desc.Id, type), item);
+                }
+
+                /* Prefer Japanese audio when present */
+                foreach (MediaTrack track in Media.Tracks) {
+                    if (track.TrackType == TrackType.Audio && track.Language == "jpn") {
+                        Player.SetAudioTrack(track.Id);
+                        break;
+                    }
+                }
+
+                if (Player.AudioTrackCount > 0) {
+                    menu[(Player.AudioTrack, TrackType.Audio)].IsChecked = true;
+                }
+
+                if (Player.VideoTrackCount > 0) {
+                    menu[(Player.VideoTrack, TrackType.Video)].IsChecked = true;
+                }
+
+                if (Player.SpuCount > 0) {
+                    menu[(Player.Spu, TrackType.Text)].IsChecked = true;
+                }
+
+                VideoContextMenu.IsEnabled = true;
+            });
+        }
+
         #endregion
     }
 }

@@ -324,7 +324,7 @@ namespace AiSyncServer {
 
             /* Start status polling thread */
             AiPlaybackTimer timer = new(_logger_factory, parsed.Duration, 75, 100);
-            timer.PositionChanged += async (o, e) => {
+            timer.PositionChanged += (o, e) => {
                 if (e.IsSeek) {
                     _logger.LogDebug("New position: {} (seek: {})", AiSync.Utils.FormatTime(e.Position), e.IsSeek);
                     SendAndExpectAll<AiServerRequestSeek, AiClientReady>(new() { Target = e.Position });
@@ -394,8 +394,6 @@ namespace AiSyncServer {
                 PlayingChanged?.Invoke(sender, e);
             }
         }
-
-        
 
         /* Returns all clients that failed to respond */
         private IEnumerable<MessageResponse<Resp>> SendAndExpectAll<Msg, Resp>(Msg? src = null)
