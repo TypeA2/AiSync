@@ -6,9 +6,7 @@ using Microsoft.Extensions.Logging;
 
 using System;
 using System.Net;
-using System.Net.Sockets;
 using System.Reflection;
-using System.Threading;
 using System.Threading.Tasks;
 
 using WatsonTcp;
@@ -56,9 +54,9 @@ namespace AiSyncClient {
 
         private readonly WatsonTcpClient client;
 
-        private bool playing = false;
-        private long pos_ms = 0;
-        private DateTime ts;
+        private PlayingState last_state = PlayingState.Stopped;
+        private long last_pos = 0;
+        private DateTime last_ts = DateTime.UtcNow;
 
         public AiClient(ILoggerFactory fact, IPAddress addr, ushort port) : this(fact, new IPEndPoint(addr, port)) { }
 
@@ -138,11 +136,11 @@ namespace AiSyncClient {
             _logger.LogInformation("Input media done parsing");
         }
 
-        public void SetStatus(bool playing, long pos_ms) {
-            _logger.LogDebug("Status request, playing={}, pos={}", playing, pos_ms);
-            this.playing = playing;
-            this.pos_ms = pos_ms;
-            ts = DateTime.Now;
+        public void SetStatus(PlayingState state, long pos_ms) {
+            _logger.LogDebug("Status request, state={}, pos={}", state, pos_ms);
+            last_state = state;
+            last_pos = pos_ms;
+            last_ts = DateTime.UtcNow;
         }
 
         public async void RequestPause(long pos) {
@@ -225,6 +223,7 @@ namespace AiSyncClient {
                 AiMessageType.ServerRequestsPause => HandleServerRequestsPause,
                 AiMessageType.ServerRequestsSeek => HandleServerRequestsSeek,
                 AiMessageType.FileClosed => HandleFileClosed,
+                AiMessageType.ServerRequestsStatus => HandleServerRequestsStatus,
                 _ => HandleDefault,
             };
 
@@ -315,6 +314,19 @@ namespace AiSyncClient {
             return new();
         }
 
+        private AiClientStatus HandleServerRequestsStatus(AiServerRequestsStatus msg) {
+            _logger.LogInformation("Status request");
+
+            AiClientStatus status = new();
+
+            UpdateStatus?.Invoke(this, EventArgs.Empty);
+
+            status.State = last_state;
+            status.Position = last_pos;
+            status.Timestamp = last_ts;
+
+            return status;
+        }
         private AiProtocolMessage HandleDefault(AiProtocolMessage msg) {
             _logger.LogCritical("Unexpected message of type {} from {}", msg.Type, client);
             return new();

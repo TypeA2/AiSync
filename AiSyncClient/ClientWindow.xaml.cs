@@ -144,7 +144,7 @@ namespace AiSyncClient {
         }
 
         private void UpdateCurrentPosition() {
-            if (!HasMedia) {
+            if (!HasMedia || remote_scrubbing) {
                 return;
             }
 
@@ -512,7 +512,6 @@ namespace AiSyncClient {
             media.SubItemTreeAdded += (_, e) => {
                 _logger.LogInformation("B Subitems: {}", media.SubItems);
             };
-
 
             await media.Parse(MediaParseOptions.ParseNetwork);
 

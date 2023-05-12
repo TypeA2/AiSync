@@ -12,7 +12,6 @@ using System;
 using System.IO;
 using System.Net;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -84,8 +83,9 @@ namespace AiSyncServer {
             IPEndPoint data = new(IPAddress.Any, DataPort.ParseText<ushort>());
             CommServer = new AiServer(_logger_factory, comm, data);
 
-            CommServer.ClientConnected += (_, _) => Dispatcher.Invoke(UpdateClientCount);
-            CommServer.ClientDisconnected += (_, _) => Dispatcher.Invoke(UpdateClientCount);
+            CommServer.ClientConnected += (_, e) => Dispatcher.Invoke(() => ClientConnected(e.Client));
+            CommServer.ClientDisconnected += (_, e) => Dispatcher.Invoke(() => ClientDisconnected(e.Client));
+            CommServer.ClientUpdated += (_, e) => Dispatcher.Invoke(() => ClientUpdated(e));
 
             CommServer.ServerStarted += (_, _) => Dispatcher.Invoke(() => {
                 SetStatus("Idle");
@@ -101,7 +101,10 @@ namespace AiSyncServer {
             });
 
             CommServer.PositionChanged += (_, e) =>
-                Dispatcher.Invoke(() => SetCurrentPos(e.Position));
+                Dispatcher.Invoke(() => {
+                    SetCurrentPos(e.Position);
+                    UpdateClients();
+                });
 
             CommServer.Start();
         }

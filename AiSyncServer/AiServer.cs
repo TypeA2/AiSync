@@ -6,7 +6,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using System.Reflection;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
@@ -14,26 +13,42 @@ using Microsoft.Extensions.Logging;
 using WatsonTcp;
 using LibVLCSharp.Shared;
 using System.Diagnostics.CodeAnalysis;
-using HeyRed.Mime;
-using System.Windows.Threading;
-using System.Timers;
 
 namespace AiSyncServer {
-    internal enum AiConnectionState {
-        Closed,
-        Connected,
-        SentHasFile,
+    internal class ClientEvent : EventArgs {
+        public ClientMetadata Client { get; }
+
+        public ClientEvent(ClientMetadata client) {
+            Client = client;
+        }
     }
 
-    internal class AiClientConnection {
-        public AiConnectionState State { get; set; } = AiConnectionState.Closed;
+    internal class ClientUpdateEvent : EventArgs {
+        public Guid Guid { get; }
+
+        public double? Ping { get; }
+
+        public long? Position { get; }
+
+        public PlayingState? State { get; }
+
+        public DateTime Timestamp { get; }
+
+        public ClientUpdateEvent(Guid guid, DateTime timestamp, double? ping, long? position, PlayingState? state) {
+            Guid = guid;
+            Timestamp = timestamp;
+            Ping = ping;
+            Position = position;
+            State = state;
+        }
     }
 
     internal sealed class AiServer : IDisposable {
         
         public event EventHandler? ServerStarted;
-        public event EventHandler? ClientConnected;
-        public event EventHandler? ClientDisconnected;
+        public event EventHandler<ClientEvent>? ClientConnected;
+        public event EventHandler<ClientEvent>? ClientDisconnected;
+        public event EventHandler<ClientUpdateEvent>? ClientUpdated;
 
         public event EventHandler<PlayingChangedEventArgs>? PlayingChanged;
         public event EventHandler<PositionChangedEvent>? PositionChanged;
@@ -117,9 +132,10 @@ namespace AiSyncServer {
 
         private readonly List<Guid> _clients = new();
 
-        public IList<Guid> Clients { get => _clients; }
+        public int ClientCount => server.Connections;
 
-        public int ClientCount { get => _clients.Count; }
+        /* Was .ToList()'d before returning */
+        public List<ClientMetadata> Clients => (List<ClientMetadata>)server.ListClients();
 
         public static long CloseEnoughValue => 1500;
         public static int Timeout => 1000;
@@ -421,7 +437,18 @@ namespace AiSyncServer {
             where Msg : AiProtocolMessage
             where Resp : AiProtocolMessage {
             try {
+                DateTime start = DateTime.UtcNow;
+                
                 SyncResponse response = server.SendAndWait(Timeout, guid, src.AiSerialize());
+
+                TimeSpan elapsed = DateTime.UtcNow - start;
+
+                /* Async to prevent waiting for no reason */
+                Task.Run(() => {
+                    ClientUpdated?.Invoke(this,
+                        new ClientUpdateEvent(guid, DateTime.UtcNow,
+                            elapsed.TotalMilliseconds, null, null));
+                });
 
                 return new MessageResponse<Resp>(guid, response.Data.ToUtf8().AiDeserialize<Resp>());
             } catch (TimeoutException) {
@@ -435,7 +462,7 @@ namespace AiSyncServer {
 
         /* Return all failed clients */
         private async Task<IEnumerable<Guid>> SendToAll<T>(T? msg = null) where T : AiProtocolMessage, new() {
-            IEnumerable<(Guid guid, Task<bool> task)> tasks = Clients.Select((guid) => (guid, SendMessage(guid, msg)));
+            IEnumerable<(Guid guid, Task<bool> task)> tasks = Clients.Select((client) => (client.Guid, SendMessage(client.Guid, msg)));
 
             await Task.WhenAll(tasks.Select(p => p.task));
 
@@ -446,16 +473,14 @@ namespace AiSyncServer {
             return await server.SendAsync(guid, (msg ?? new T()).AiSerialize());
         }
 
-        private AiClientStatus? GetClientStatus(Guid guid) {
-            try {
-                return SendAndExpectMsg<AiServerRequestsStatus, AiClientStatus>(guid, new()).Response;
-            } catch (TimeoutException) {
-                
-            } catch (InvalidMessageException) {
+        public void UpdateClient(Guid guid) {
+            MessageResponse<AiClientStatus> response = SendAndExpectMsg<AiServerRequestsStatus, AiClientStatus>(guid, new());
 
+            if (response.Response is not null) {
+                ClientUpdated?.Invoke(this,
+                    new ClientUpdateEvent(guid, response.Response.Timestamp,
+                        ping: null, position: response.Response.Position, state: response.Response.State));
             }
-
-            return null;
         }
 
         private void OnMessageReceived(object? sender, MessageReceivedEventArgs e) {
@@ -470,7 +495,7 @@ namespace AiSyncServer {
                 _clients.Add(e.Client.Guid);
             }
 
-            ClientConnected?.Invoke(this, EventArgs.Empty);
+            ClientConnected?.Invoke(this, new ClientEvent(e.Client));
 
             if (media is not null) {
                 lock (control_lock) {
@@ -502,7 +527,7 @@ namespace AiSyncServer {
                 _clients.Remove(e.Client.Guid);
             }
             
-            ClientDisconnected?.Invoke(this, EventArgs.Empty);
+            ClientDisconnected?.Invoke(this, new ClientEvent(e.Client));
         }
 
         private SyncResponse OnSyncRequestReceived(SyncRequest req) {
@@ -622,8 +647,8 @@ namespace AiSyncServer {
             DateTime start = DateTime.Now;
             long target_pos = media.Position;
 
-            Task<AiClientStatus?>[] tasks = Clients.Select(async guid => {
-                return await Task.Run(() => GetClientStatus(guid));
+            Task<AiClientStatus?>[] tasks = Clients.Select(async client => {
+                return await Task.Run(() => SendAndExpectMsg<AiServerRequestsStatus, AiClientStatus>(client.Guid, new()).Response);
             }).ToArray();
 
             /* Get earliest position of all clients */

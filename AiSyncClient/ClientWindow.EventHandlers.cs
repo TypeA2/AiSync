@@ -182,9 +182,9 @@ namespace AiSyncClient {
             CommClient.UpdateStatus += (_, _) => Dispatcher.Invoke(() => {
                 _logger.LogInformation("Requesting status");
                 if (HasMedia) {
-                    CommClient.SetStatus(Player.IsPlaying, Player.PositionMs());
+                    CommClient.SetStatus(Player.IsPlaying ? PlayingState.Playing : PlayingState.Paused, Player.PositionMs());
                 } else {
-                    CommClient.SetStatus(false, 0);
+                    CommClient.SetStatus(PlayingState.Stopped, 0);
                 }
             });
 
@@ -247,6 +247,7 @@ namespace AiSyncClient {
             if (!HasMedia) {
                 return;
             }
+
             remote_scrubbing = true;
             long new_pos = (long)Math.Round(((AiSlider)sender).Value * Media.Duration);
             Scrub(new_pos);

@@ -8,6 +8,13 @@ using System.Diagnostics.CodeAnalysis;
 
 using Microsoft.Extensions.Logging;
 using AiSyncServer.Properties;
+using WatsonTcp;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
+using System.Collections.ObjectModel;
+using System.Windows.Controls;
+using System.Threading.Tasks;
 
 namespace AiSyncServer {
     public partial class ServerWindow : Window {
@@ -33,10 +40,71 @@ namespace AiSyncServer {
         private readonly ILoggerFactory _logger_factory = LoggerFactory.Create(builder => {
             builder
                 .AddAiLogger()
-                .SetMinimumLevel(Microsoft.Extensions.Logging.LogLevel.Debug);
+                .SetMinimumLevel(LogLevel.Debug);
         });
 
         private readonly ILogger _logger;
+
+        private readonly Dictionary<Guid, ClientListItem> _clients = new();
+
+        public ObservableCollection<ClientListItem> ClientListSource { get; } = new();
+
+        private DateTime _last_client_update = DateTime.UtcNow;
+
+        public sealed class ClientListItem : INotifyPropertyChanged {
+            public ClientMetadata Client { get; }
+
+            public string Address { get; }
+
+            private double? _ping = null;
+            public string Ping => (_ping is null) ? "unknown" : ((int)Math.Round(_ping.Value)).ToString();
+
+            private PlayingState _state = PlayingState.Stopped;
+            public PlayingState State {
+                get {
+                    return _state;
+                }
+
+                set {
+                    _state = value;
+                    OnPropertyChanged(nameof(State));
+                }
+            }
+
+            private long _position = 0;
+
+            public string Position => AiSync.Utils.FormatTime(_position);
+
+            public long Delta { get; private set; }
+
+            public DateTime LastUpdate { get; set; } = DateTime.UtcNow;
+
+            public event PropertyChangedEventHandler? PropertyChanged;
+
+            public ClientListItem(ClientMetadata client) {
+                Client = client;
+                Address = Client.IpPort;
+            }
+
+            public void SetPing(double? ping) {
+                _ping = ping;
+                OnPropertyChanged(nameof(Ping));
+            }
+
+            public void SetPosition(long position) {
+                _position = position;
+                OnPropertyChanged(nameof(Position));
+            }
+
+            public void SetDelta(long delta) {
+                Delta = delta;
+                OnPropertyChanged(nameof(Delta));
+            }
+
+            private void OnPropertyChanged(string property_name) {
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(property_name));
+            }
+        }
 
         public ServerWindow() {
             _logger = _logger_factory.CreateLogger("ServerWindow");
@@ -102,6 +170,24 @@ namespace AiSyncServer {
                 ms_prec: 3);
         }
 
+        private void UpdateClients() {
+            if (!CommRunning) {
+                return;
+            }
+
+            //TimeSpan elapsed = DateTime.UtcNow - _last_client_update;
+            
+            const int update_delay = 500;
+
+            foreach (ClientListItem item in ClientListSource) {
+                if ((DateTime.UtcNow - item.LastUpdate).TotalMilliseconds > update_delay) {
+                    Task.Run(() => {
+                        CommServer.UpdateClient(item.Client.Guid);
+                    });
+                }
+            }
+        }
+
         private void ValidateServerParams() {
             if (!IsLoaded) {
                 return;
@@ -133,12 +219,60 @@ namespace AiSyncServer {
             }
         }
 
-        private void UpdateClientCount() {
-            if (CommRunning) {
-                ClientsConnected.Text = CommServer.ClientCount.ToString();
+        private void ClientConnected(ClientMetadata client) {
+            if (!CommRunning) {
+                return;
             }
+
+            ClientsConnected.Text = CommServer.ClientCount.ToString();
+
+            ClientListItem item = new(client);
+
+            _clients.Add(client.Guid, item);
+            ClientListSource.Add(item);
         }
-        
+
+        private void ClientDisconnected(ClientMetadata client) {
+            if (!CommRunning) {
+                return;
+            }
+
+            ClientsConnected.Text = CommServer.ClientCount.ToString();
+
+            ClientListSource.Remove(_clients[client.Guid]);
+            _clients.Remove(client.Guid);
+        }
+
+        private void ClientUpdated(ClientUpdateEvent e) {
+            if (!CommRunning) {
+                return;
+            }
+
+
+            ClientListItem item = _clients[e.Guid];
+
+            if (e.Position is not null) {
+                TimeSpan elapsed = DateTime.UtcNow - e.Timestamp;
+
+                long extra_ms = (long)Math.Round(elapsed.TotalMilliseconds);
+
+                _logger.LogDebug("Updated {}: {}", e.Guid, e.Position.Value + extra_ms);
+
+                item.SetPosition(e.Position.Value + extra_ms);
+                item.SetDelta((e.Position.Value + extra_ms) - CommServer.Position);
+            }
+
+            if (e.Ping is not null) {
+                item.SetPing((e.Ping.Value < 0) ? null : e.Ping.Value);
+            }
+
+            if (e.State is not null) {
+                item.State = e.State.Value;
+            }
+
+            item.LastUpdate = DateTime.UtcNow;
+        }
+
         private void ResetFile() {
             /* Close any media, remove current file, notify clients */
             if (!CommRunning) {
