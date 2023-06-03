@@ -1,0 +1,35 @@
+@use "./theme.scss";
+
+#info-box {
+    background-color: theme.$grey-3;
+    border-radius: 3px;
+    border: 1px solid theme.$grey-7;
+    padding: 8px;
+
+    table {
+        width: 100%;
+        border-collapse: collapse;
+        tr {
+            display: flex;
+            align-items: stretch;
+
+            &:nth-child(odd) {
+                background-color: theme.$grey-5;
+            }
+
+            td {
+
+                padding: 4px 12px;
+
+                &:first-child {
+                    min-width: 120px;
+                    text-align: right;
+                }
+    
+                &:nth-child(2) {
+                    flex: 1;
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,27 @@
+$near-white: #f8f9fa;
+
+$primary: #3e50b4;
+$accent: #ff3f80;
+
+$grey-0: #121212;
+$grey-1: #1a1a1a;
+$grey-2: #222222;
+$grey-3: #2a2a2a;
+$grey-4: #323232;
+$grey-5: #3a3a3a;
+$grey-6: #424242;
+$grey-7: #4a4a4a;
+$grey-8: #525252;
+$grey-9: #5a5a5a;
+$grey-a: #626262;
+$grey-b: #6a6a6a;
+$grey-c: #727272;
+$grey-d: #7a7a7a;
+$grey-e: #828282;
+$grey-f: #8a8a8a;
+
+body {
+    font-family: Arial, Helvetica, sans-serif;
+    color: $near-white;
+    background-color: $grey-1;
+}
