@@ -3,13 +3,16 @@ import * as externals from "webpack-node-externals";
 import * as HtmlWebpackPlugin from "html-webpack-plugin";
 import * as MiniCssExtractPlugin from "mini-css-extract-plugin";
 import * as CopyPlugin from "copy-webpack-plugin";
+import * as autoprefixer from "autoprefixer";
 import { CleanWebpackPlugin } from "clean-webpack-plugin";
 
 import * as path from "path";
 
+const mode = process.env.NODE_ENV?.startsWith("prod") ? "production" : "development";
+
 function create_client_config(entry: string, options?: HtmlWebpackPlugin.Options | undefined): webpack.Configuration {
     return {
-        mode: "production",
+        mode: mode,
         devtool: "source-map",
         watch: true,
         entry: entry,
@@ -30,6 +33,14 @@ function create_client_config(entry: string, options?: HtmlWebpackPlugin.Options
                     use: [
                         MiniCssExtractPlugin.loader,
                         "css-loader",
+                        {
+                            loader: "postcss-loader",
+                            options: {
+                                postcssOptions: {
+                                    plugins: () => [ autoprefixer ]
+                                }
+                            }
+                        },
                         "sass-loader",
                     ]
                 }
@@ -45,7 +56,7 @@ function create_client_config(entry: string, options?: HtmlWebpackPlugin.Options
             new HtmlWebpackPlugin(options),
         ],
         optimization: {
-            runtimeChunk: "single",
+            runtimeChunk: "multiple",
             moduleIds: "deterministic",
             splitChunks: {
                 cacheGroups: {
@@ -61,18 +72,18 @@ function create_client_config(entry: string, options?: HtmlWebpackPlugin.Options
 }
 
 const pages = [
-    create_client_config("./client/watch.ts", {
-        filename: "html/watch.html",
-        template: "client/html/watch.html",
-        favicon: "./favicon.ico",
-        title: "AiSync - Watch",
-        publicPath: "/"
-    }),
     create_client_config("./client/login.ts", {
         filename: "html/login.html",
         template: "client/html/login.html",
         favicon: "./favicon.ico",
         title: "AiSync - Login",
+        publicPath: "/"
+    }),
+    create_client_config("./client/watch.ts", {
+        filename: "html/watch.html",
+        template: "client/html/watch.html",
+        favicon: "./favicon.ico",
+        title: "AiSync - Watch",
         publicPath: "/"
     }),
     create_client_config("./client/admin.ts", {
@@ -86,7 +97,7 @@ const pages = [
 
 const server_config: webpack.Configuration = {
     target: "node",
-    mode: "production",
+    mode: mode,
     watch: true,
     devtool: "source-map",
     entry: "./server/index.ts",
@@ -109,7 +120,7 @@ const server_config: webpack.Configuration = {
 }
 
 const cleanup: webpack.Configuration = {
-    mode: "production",
+    mode: mode,
     entry: "./stub.js",
     output: {
         path: path.resolve(__dirname, "dist"),
@@ -124,7 +135,7 @@ const cleanup: webpack.Configuration = {
 };
 
 const copy_assets: webpack.Configuration = {
-    mode: "production",
+    mode: mode,
     entry: "./stub.js",
     plugins: [
         new CopyPlugin({

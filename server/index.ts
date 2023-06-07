@@ -1,31 +1,90 @@
-import * as express from "express";
-import * as session from "express-session";
-import * as http from "http";
-import * as crypto from "crypto";
-import * as ws from "ws";
-import * as cookie_parser from "cookie-parser";
-import argv from "./cli";
-import "./session";
 
-const app = express();
-const server = http.createServer(app);
-const wss = new ws.WebSocketServer({ server });
+import * as multer from "multer";
+import * as tmp from "tmp";
+import { ensureLoggedIn } from "connect-ensure-login";
+import argv from "./cli";
+import MediaFile from "./media_file";
+
+import * as setup from "./server_setup";
+import { Ai } from "../shared/api";
 
 const client_root = { root: `${__dirname}/../client/` };
 
-app.use("/js", express.static(`${__dirname}/../client/js`));
-app.use("/css", express.static(`${__dirname}/../client/css`));
-app.use("/assets", express.static(`${__dirname}/../client/assets`));
+const options: setup.AppOptions = {
+    js_dir: client_root.root + "js",
+    css_dir: client_root.root + "css",
+    assets_dir: client_root.root + "assets",
 
-app.use(session({
-    secret: crypto.randomBytes(64).toString("hex"),
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-        maxAge: 1000 * 3600 * 24,
+    max_session_age: 24 * 3600 * 1000,
+};
+
+const { app, server, wss, pass } = setup.make_app(options);
+
+const tmp_dir = tmp.dirSync({
+    unsafeCleanup: true,
+});
+
+console.log("Temp directory at", tmp_dir.name);
+
+const upload = multer({
+    dest: tmp_dir.name,
+});
+
+app.get("/", (req, res) => {
+    switch (req.user?.user) {
+        case "admin":
+            res.redirect("/admin");
+            break;
+
+        case "user":
+            res.redirect("/watch");
+            break;
+
+        default:
+            res.redirect("/login");
     }
-}));
-app.use(cookie_parser(), express.json(), express.urlencoded({ extended: true }));
+});
+
+app.get("/watch", ensureLoggedIn("/login"), (req, res) => {
+    res.sendFile("html/watch.html", client_root);
+});
+
+app.get("/admin", ensureLoggedIn("/login?admin"), (req, res) => {
+    res.sendFile("html/admin.html", client_root);
+});
+
+app.get("/login", (req, res) => {
+    res.sendFile("html/login.html", client_root)
+});
+
+app.use("/favicon.ico", (_, res) => {
+    res.sendFile("favicon.ico", client_root);
+});
+
+app.post("/login",
+    (req, res, next) => {
+        /* Dynamically redirect error page */
+        const type = (req.body?.username === "admin") ? "admin" : "user";
+        
+        const callback = pass.authenticate("local", { failureRedirect: `/login?${type}_error`, failureMessage: "what" });
+
+        return callback(req, res, next);
+    },
+
+    (req, res) => {
+        res.redirect((req.user?.user === "admin") ? "/admin" : "/watch");
+    }
+);
+
+app.get("/logout", (req, res, next) => {
+    req.logout(err => {
+        if (err) { 
+            return next(err);
+        }
+        
+        res.redirect("/login");
+    })
+});
 
 wss.on("connection", (ws) => {
 
@@ -41,73 +100,25 @@ wss.on("connection", (ws) => {
     ws.send('Hi there, I am a WebSocket server');
 });
 
-app.get("/", (req, res) => {
-    switch (req.session.login_type) {
-        case "admin":
-            res.redirect("/admin");
-            break;
-
-        case "user":
-            res.redirect("/watch");
-            break;
-
-        default:
-            res.redirect("/login");
+app.post("/admin", upload.single("file"), (req, res) => {
+    if (typeof(req.user) !== "object" || req.user.user !== "admin") {
+        return res.status(403).json({ success: false });
     }
-});
 
-app.get("/watch", (req, res) => {
-    if (req.session.login_type !== "user" && req.session.login_type !== "admin") {
-        res.redirect("/login");
-    } else {
-        res.sendFile("html/watch.html", client_root);
-    }
-});
+    console.log(req.files);
+    console.log(req.file?.fieldname);
+    console.log(req.file?.originalname);
+    console.log(req.file?.mimetype);
+    console.log(req.file?.size);
+    console.log(req.file?.destination);
+    console.log(req.file?.filename);
+    console.log(req.file?.path);
 
-app.get("/admin", (req, res) => {
-    if (req.session.login_type !== "admin") {
-        res.redirect("/login?admin");
-    } else {
-        res.sendFile("html/admin.html", client_root);
-    }
-});
-
-app.get("/login", (req, res) => {
-    res.sendFile("html/login.html", client_root)
-});
-
-app.post("/login", (req, res) => {
-    switch (req.body.type) {
-        case "user": {
-            if (process.env.AISYNC_USER_PASSWORD === req.body.password) {
-                req.session.login_type = "user";
-                res.redirect("/watch");
-            } else {
-                res.redirect("/login?error");
-            }
-            break;
-        }
-
-        case "admin": {
-            if (process.env.AISYNC_ADMIN_PASSWORD == req.body.password) {
-                req.session.login_type = "admin";
-                res.redirect("/admin");
-            } else {
-                res.redirect("/login?admin_error");
-            }
-            break;
-        }
-    }
-});
-
-app.get("/logout", (req, res) => {
-    req.session.destroy(_ => res.redirect("/login"));
-});
-
-app.use("/favicon.ico", (_, res) => {
-    res.sendFile("favicon.ico", client_root);
+    return res.json({
+        success: true,
+    });
 });
 
 server.listen(argv.port, () => {
-    console.log(`Server started on port ${(server.address() as ws.AddressInfo).port}`);
+    console.log(`Server started on port ${(server.address() as { port: number; }).port}`);
 });

@@ -1,35 +1,82 @@
 @use "./theme.scss";
 
-#info-box {
-    background-color: theme.$grey-3;
-    border-radius: 3px;
-    border: 1px solid theme.$grey-7;
-    padding: 8px;
+/*
+body {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
 
-    table {
-        width: 100%;
-        border-collapse: collapse;
-        tr {
-            display: flex;
-            align-items: stretch;
+    > div {
+        background-color: theme.$grey-3;
+        border-radius: 3px;
+        border: 1px solid theme.$grey-7;
+        padding: 8px;
+        margin: 4px;
+    }
 
-            &:nth-child(odd) {
-                background-color: theme.$grey-5;
-            }
-
-            td {
-
-                padding: 4px 12px;
-
-                &:first-child {
-                    min-width: 120px;
-                    text-align: right;
+    #info-box {
+        table {
+            min-width: 480px;
+            border-collapse: collapse;
+            tr {
+                display: flex;
+                align-items: stretch;
+    
+                &:nth-child(odd) {
+                    background-color: theme.$grey-5;
                 }
     
-                &:nth-child(2) {
-                    flex: 1;
+                td {
+    
+                    padding: 4px 12px;
+    
+                    &:first-child {
+                        min-width: 120px;
+                        text-align: right;
+                    }
+        
+                    &:nth-child(2) {
+                        flex: 1;
+                    }
                 }
             }
         }
     }
+
+    #controls {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-around;
+
+        button {
+            background-color: theme.$grey-8;
+            cursor: pointer;
+            transition: background-color 0.125s;
+            border-radius: 3px;
+            border: 1px solid theme.$grey-c;
+
+            &:not(:first-child) {
+                margin-top: 8px;
+            }
+
+            &:hover {
+                background-color: theme.$grey-b;
+            }
+
+            &:disabled {
+                background-color: theme.$grey-5;
+                border-color: theme.$grey-8;
+                cursor: initial;
+
+                img {
+                    opacity: 35%;
+                }
+            }
+
+            img {
+                opacity: 55%;
+            }
+        }
+    }
 }
+*/

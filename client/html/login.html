@@ -3,23 +3,40 @@
     <head>
         <title>AiSync - Login</title>
     </head>
-    <body>
-        <div id="form-container">
-            <form action="" method="post">
-                <label for="password" id="login-label">
-                    <h1>Login</h1>
-                </label>
-                <div id="password-container">
-                    <input type="password" name="password" id="password" required>
+    <body data-bs-theme="dark">
+        <div class="container">
+            <div class="modal show" id="login-form" style="display:block;">
+                <div class="modal-dialog">
+                    <div class="modal-content">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Login</h5>
+                        </div>
+                        <div class="modal-body">
+                            <form action="", method="post" class="needs-validation">
+                                <div class="form-floating mb-3">
+                                    <input type="password" class="form-control" id="password" name="password" placeholder="hunter2" required>
+                                    <label for="password" class="form-label">Password</label>
+                                    <div class="invalid-feedback">
+                                        Invalid password
+                                    </div>
+                                </div>
+                                <div class="d-flex justify-content-between">
+                                    <div class="col-auto">
+                                        <button type="submit" class="btn btn-primary">Submit</button>
+                                    </div>
+                                    <div class="col-auto ">
+                                        <select name="username" class="form-select float-end" id="login-type">
+                                            <option value="user" selected>User</option>
+                                            <option value="admin">Admin</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
                 </div>
-                <div id="second-row">
-                    <input type="submit" value="Login">
-                    <select name="type" id="login-type">
-                        <option value="user" selected>User</option>
-                        <option value="admin">Admin</option>
-                    </select>
-                </div>
-            </form>
+            </div>
         </div>
+        <div class="modal-backdrop show"></div>
     </body>
 </html>

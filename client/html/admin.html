@@ -3,30 +3,61 @@
     <head>
         <title>AiSync - Admin</title>
     </head>
-    <body>
-        <div id="info-box">
-            <table>
-                <tr>
-                    <td>Clients</td>
-                    <td>0</td>
-                </tr>
-                <tr>
-                    <td>File</td>
-                    <td>(none)</td>
-                </tr>
-                <tr>
-                    <td>MIME</td>
-                    <td>(none)</td>
-                </tr>
-                <tr>
-                    <td>Duration</td>
-                    <td>--:--</td>
-                </tr>
-                <tr>
-                    <td>Position</td>
-                    <td>--:--</td>
-                </tr>
-            </table>
+    <body data-bs-theme="dark">
+        <div class="container d-flex justify-content-row">
+            <div class="container">
+                <div class="pt-2 px-2" id="info-box">
+                    <table class="table table-striped">
+                        <tr>
+                            <td>Clients</td>
+                            <td>0</td>
+                        </tr>
+                        <tr>
+                            <td>File</td>
+                            <td>(none)</td>
+                        </tr>
+                        <tr>
+                            <td>MIME</td>
+                            <td>(none)</td>
+                        </tr>
+                        <tr>
+                            <td>Duration</td>
+                            <td>--:--</td>
+                        </tr>
+                        <tr>
+                            <td>Position</td>
+                            <td>--:--</td>
+                        </tr>
+                    </table>
+                </div>
+                <div class="p-2 d-flex flex-row justify-content-start" id="controls">
+                    <button class="btn btn-secondary me-2" id="upload-btn">
+                        <img src="/assets/icons8-upload.png">
+                    </button>
+                    <input type="file" id="upload-file" hidden>
+        
+                    <button class="btn btn-primary mx-2" id="play-btn" disabled>
+                        <img src="/assets/icons8-play.png">
+                    </button>
+                    <button class="btn btn-danger ms-2" id="stop-btn" disabled>
+                        <img src="/assets/icons8-stop.png">
+                    </button>
+                </div>
+                <div class="progress m-2 d-none">
+                    <div class="progress-bar"></div>
+                </div>
+                <div class="m-2 alert alert-danger alert-dismissible fade">
+                    <span>
+                        Unknown error
+                    </span>
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                </div>
+            </div>
+            <div class="container mt-2">
+                <ul class="list-group">
+                    <li class="list-group-item">User 1</li>
+                </ul>
+            </div>
         </div>
     </body>
 </html>
