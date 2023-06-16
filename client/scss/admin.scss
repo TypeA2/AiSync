@@ -1,5 +1,9 @@
 @use "./theme.scss";
 
+.progress-bar {
+    transition: width 0.35s ease;
+}
+
 /*
 body {
     display: flex;

@@ -29,7 +29,7 @@ function create_client_config(entry: string, options?: HtmlWebpackPlugin.Options
                     exclude: /node_modules/
                 },
                 {
-                    test: /\.s[ac]ss$/i,
+                    test: /\.s?[ac]ss$/i,
                     use: [
                         MiniCssExtractPlugin.loader,
                         "css-loader",
@@ -51,7 +51,7 @@ function create_client_config(entry: string, options?: HtmlWebpackPlugin.Options
         },
         plugins: [
             new MiniCssExtractPlugin({
-                filename: `css/${path.parse(entry).name}.css`
+                filename: `css/${path.parse(entry).name}.[id].css`,
             }),
             new HtmlWebpackPlugin(options),
         ],

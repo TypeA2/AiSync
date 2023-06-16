@@ -1,11 +1,11 @@
 import * as express from "express";
+import * as express_ws from "express-ws";
 import * as passport from "passport";
 import * as passport_local from "passport-local";
-import * as ws from "ws";
-import * as http from "http";
-import * as session from "express-session";
+import * as express_session from "express-session";
 import * as crypto from "crypto";
-import * as cookie_parser from "cookie-parser";
+
+import "express-ws";
 
 declare global {
     namespace Express {
@@ -24,17 +24,15 @@ export interface AppOptions {
 }
 
 interface App {
-    app: express.Express;
-    server: http.Server;
-    wss: ws.WebSocketServer;
+    app: express_ws.Application;
+    ws_inst: express_ws.Instance;
 
     pass: passport.Authenticator;
 }
 
 export function make_app(options: AppOptions): App {
-    const app = express();
-    const server = http.createServer(app);
-    const wss = new ws.WebSocketServer({ server });
+    const ws_inst = express_ws(express());
+    const app = ws_inst.app;
 
     const pass = new passport.Authenticator();
     pass.use(new passport_local.Strategy((username, password, done) => {
@@ -80,20 +78,21 @@ export function make_app(options: AppOptions): App {
     app.use("/css", express.static(options.css_dir));
     app.use("/assets", express.static(options.assets_dir));
 
-    app.use(session({
+    const session = express_session({
         secret: crypto.randomBytes(64).toString("hex"),
         resave: false,
         saveUninitialized: false,
         cookie: {
             maxAge: 1000 * 3600 * 24,
         }
-    }));
+    });
+
+    app.use(session);
     app.use(pass.session(), express.json(), express.urlencoded({ extended: true }));
 
     return {
         app,
-        server,
-        wss,
-        pass
+        ws_inst,
+        pass,
     };
 }
