@@ -31,8 +31,24 @@ class AdminPanelComponent extends HTMLElement {
     private position: HTMLTableCellElement;
 
     private client_list: ClientListComponent;
+    private client_count_val: number = 0;
 
     private ws: WebSocket;
+
+    private timer: ReturnType<typeof setInterval> | undefined;
+    private playing: boolean = false;
+    private last_start: number = Date.now();
+    private last_position: number = 0;
+
+    private get playback_position(): number {
+        if (!this.playing) {
+            return this.last_position;
+        }
+
+        const elapsed = Date.now() - this.last_start;
+
+        return this.last_position + (elapsed / 1000);
+    }
 
     constructor() {
         super();
@@ -188,8 +204,8 @@ class AdminPanelComponent extends HTMLElement {
         log.info("New file received", msg);
 
         this.upload_btn.disabled = true;
-        this.play_btn.disabled = false;
-        this.stop_btn.disabled = false;
+        //this.play_btn.disabled = false;
+        //this.stop_btn.disabled = false;
 
         this.filename.innerText = msg.name;
         this.file_mime.innerText = msg.media_mime;
@@ -212,6 +228,9 @@ class AdminPanelComponent extends HTMLElement {
     private clients_joined(msg: Ai.ClientsJoined) {
         log.info("Clients joined", msg);
 
+        this.client_count_val += msg.clients.length;
+        this.client_count.innerText = this.client_count_val.toString();
+
         for (const client of msg.clients) {
             this.client_list.add({
                 uuid: client.uuid,
@@ -225,6 +244,9 @@ class AdminPanelComponent extends HTMLElement {
     private clients_left(msg: Ai.ClientsLeft) {
         log.info("Clients left", msg);
 
+        this.client_count_val -= msg.clients.length;
+        this.client_count.innerText = this.client_count_val.toString();
+
         for (const client of msg.clients) {
             this.client_list.remove_client(client);
         }
@@ -232,24 +254,47 @@ class AdminPanelComponent extends HTMLElement {
 
     private pause(msg: Ai.Message) {
         log.info("Pause requested", msg);
+
+        clearInterval(this.timer);
+        this.timer = undefined;
+
+        this.last_position = this.playback_position;
+        this.playing = false;
+        this.update_time();
     }
 
     private play(msg: Ai.Message) {
         log.info("Play requested", msg);
+
+        this.last_start = Date.now();
+        this.playing = true;
+        
+        this.timer = setInterval(() => this.update_time(), 125);
+        this.update_time();
     }
 
     private seek(msg: Ai.Seek) {
         log.info("Seek requested", msg);
+        this.last_start = Date.now();
+        this.last_position = msg.position;
+        this.update_time();
     }
 
     private update_status(msg: Ai.ClientStatusUpdate) {
-        log.info("Progress update", msg);
-
+        log.info("Progress update", msg, msg.position,
+            this.playback_position, (msg.position - this.playback_position),
+            this.last_position, this.playing
+        );
         this.client_list.update_client(msg.id, {
             position: msg.position,
             playing: msg.playing,
+            delta: (msg.position - this.playback_position),
             latency: Math.abs((Date.now() / 1000) - msg.sent)
         });
+    }
+
+    private update_time() {
+        this.position.innerText = this.playback_position.toTimeString();
     }
 }
 

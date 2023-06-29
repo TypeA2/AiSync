@@ -194,6 +194,7 @@ const modal_el = document.getElementById("autoplay-modal") as HTMLDivElement;
 
 modal_el.addEventListener("hidden.bs.modal", _ => {
     log.info("Modal hidden, instantiating player");
+    modal_el.remove();
     const _player = new AiPlayer();
 });
 

@@ -2,31 +2,27 @@ import { Client } from "../shared/api";
 import log from "../shared/logging";
 import "../shared/utils";
 
-class ClientListItemComponent extends HTMLElement {
+class ClientListItemComponent extends HTMLTableRowElement {
     private _client: Client;
+    private _delta_val: number;
 
     private _uuid: HTMLTableCellElement = document.createElement("td");
     private _position: HTMLTableCellElement = document.createElement("td");
+    private _delta: HTMLTableCellElement = document.createElement("td");
     private _playing: HTMLTableCellElement = document.createElement("td");
     private _latency: HTMLTableCellElement = document.createElement("td");
 
     constructor(client: Client) {
         super();
 
-        this.classList.add("list-group-item");
 
-        const table = document.createElement("table");
-        table.classList.add("table", "table-striped-columns");
-        
-        const tr = document.createElement("tr");
-
-        tr.append(this._uuid, this._position, this._playing, this._latency);
-        table.append(tr);
-        this.append(table);
+        this.append(this._uuid, this._position, this._delta, this._playing, this._latency);
 
         this._client = client;
+        this._delta_val = 0;
         this.uuid = client.uuid;
         this.position = client.position;
+        this.delta = 0;
         this.playing = client.playing;
         this.latency = client.latency;
     }
@@ -49,6 +45,15 @@ class ClientListItemComponent extends HTMLElement {
         return this._client.position;
     }
 
+    public set delta(val: number) {
+        this._delta_val = val;
+        this._delta.innerText = val.toFixed(3);
+    }
+
+    public get delta(): number {
+        return this._delta_val;
+    }
+
     public set playing(val: boolean) {
         this._client.playing = val;
         this._playing.innerText = val ? "Playing" : "Paused";
@@ -60,7 +65,7 @@ class ClientListItemComponent extends HTMLElement {
 
     public set latency(val: number) {
         this._client.latency = val;
-        this._latency.innerText = Math.round(val * 1000).toString() + " ms";
+        this._latency.innerText = Math.round(val * 1000).toString();
     }
 
     public get latency(): number {
@@ -68,6 +73,8 @@ class ClientListItemComponent extends HTMLElement {
     }
 }
 
-customElements.define("client-list-item", ClientListItemComponent);
+customElements.define("client-list-item", ClientListItemComponent, {
+    extends: "tr"
+});
 
 export default ClientListItemComponent;
