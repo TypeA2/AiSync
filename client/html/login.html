@@ -14,21 +14,16 @@
                         <div class="modal-body">
                             <form action="", method="post" class="needs-validation">
                                 <div class="form-floating mb-3">
-                                    <input type="password" class="form-control" id="password" name="password" placeholder="hunter2" required>
+                                    <input type="hidden" name="username" value="dummy">
+                                    <input type="password" class="form-control" id="password" name="password" placeholder="hunter2" required autofocus>
                                     <label for="password" class="form-label">Password</label>
-                                    <div class="invalid-feedback">
+                                    <div class="invalid-feedback" id="invalid-feedback">
                                         Invalid password
                                     </div>
                                 </div>
                                 <div class="d-flex justify-content-between">
                                     <div class="col-auto">
                                         <button type="submit" class="btn btn-primary">Submit</button>
-                                    </div>
-                                    <div class="col-auto ">
-                                        <select name="username" class="form-select float-end" id="login-type">
-                                            <option value="user" selected>User</option>
-                                            <option value="admin">Admin</option>
-                                        </select>
                                     </div>
                                 </div>
                             </form>

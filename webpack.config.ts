@@ -7,6 +7,7 @@ import * as autoprefixer from "autoprefixer";
 import { CleanWebpackPlugin } from "clean-webpack-plugin";
 
 import * as path from "path";
+import { stringify } from "uuid";
 
 const mode = process.env.NODE_ENV?.startsWith("prod") ? "production" : "development";
 
@@ -54,6 +55,9 @@ function create_client_config(entry: string, options?: HtmlWebpackPlugin.Options
                 filename: `css/${path.parse(entry).name}.[id].css`,
             }),
             new HtmlWebpackPlugin(options),
+            new webpack.DefinePlugin({
+                "process.env.IS_NODE": JSON.stringify(false)
+            })
         ],
         optimization: {
             runtimeChunk: "multiple",
@@ -105,6 +109,11 @@ const server_config: webpack.Configuration = {
         path: path.resolve(__dirname, "dist", "server"),
         filename: "ai-sync.js"
     },
+    plugins: [
+        new webpack.DefinePlugin({
+            "process.env.IS_NODE": JSON.stringify(true)
+        })
+    ],
     module: {
         rules: [
             {

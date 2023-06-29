@@ -1,46 +1,85 @@
 
 import * as multer from "multer";
-import * as tmp from "tmp";
-import * as fs from "fs";
-import { ensureLoggedIn } from "connect-ensure-login";
-
 import argv from "./cli";
-import * as MediaFile from "./MediaFile";
-import * as setup from "./server_setup";
-import Ai from "../shared/api";
+import Server from "./server";
+import log from "../shared/logging";
+import { RequestHandler } from "express";
+import { WebsocketRequestHandler } from "express-ws";
+import { SocketCloseReasons } from "../shared/api";
 
 const client_root = { root: `${__dirname}/../client/` };
 
-const options: setup.AppOptions = {
+const server = new Server({
     js_dir: client_root.root + "js",
     css_dir: client_root.root + "css",
     assets_dir: client_root.root + "assets",
 
     max_session_age: 24 * 3600 * 1000,
-};
-
-const { app, ws_inst, pass } = setup.make_app(options);
-
-const tmp_dir = tmp.dirSync({
-    unsafeCleanup: true,
 });
 
-const media = new MediaFile.default(tmp_dir.name);
+const { app, pass } = server.app;
 
-console.log("Temp directory at", tmp_dir.name);
-
-const upload = multer({
-    dest: tmp_dir.name,
-});
+const upload = multer();
 
 const exit_handler = () => {
-    tmp_dir.removeCallback();
+    server.tmp_dir.removeCallback();
 
     process.exit(0);
 }
 
 process.on("SIGINT", exit_handler);
 process.on("SIGTERM", exit_handler);
+
+function ensure_login(user: "user" | "admin", mode: "redirect" | "error"): RequestHandler {
+    return (req, res, next) => {
+        /* Lazy evaluation */
+        const ret = (arg: string = "") => {
+            if (mode === "redirect") {
+                return res.redirect(`/login${arg}`);
+            } else {
+                return res.status(403).json({ success: false, message: "Not logged in" });
+            }
+        }
+
+        if (!req.isAuthenticated || !req.isAuthenticated() || typeof(req.user) !== "object") {
+            return ret();
+        }
+
+        /* Only allow admin */
+        if (user === "admin") {
+            if (req.user.user !== "admin") {
+                return ret((req.user.user === "user") ? "?admin" : "");
+            }
+        } else {
+            /* Admin can access both pages */
+            if (req.user.user !== "user" && req.user.user !== "admin") {
+                return ret();
+            }
+        }
+
+        next();
+    }
+}
+
+function ensure_login_ws(user: "user" | "admin"): WebsocketRequestHandler {
+    return (ws, req, next) => {
+        if (!req.isAuthenticated || !req.isAuthenticated() || typeof(req.user) !== "object") {
+            return ws.close();
+        }
+
+        if (user === "admin") {
+            if (req.user.user !== "admin") {
+                return ws.close(SocketCloseReasons.InvalidLogin, "Invalid login");
+            }
+        } else {
+            if (req.user.user !== "user" && req.user.user !== "admin") {
+                return ws.close(SocketCloseReasons.InvalidLogin, "Invalig login");
+            }
+        }
+
+        next();
+    }
+}
 
 app.get("/", (req, res) => {
     switch (req.user?.user) {
@@ -57,32 +96,24 @@ app.get("/", (req, res) => {
     }
 });
 
-app.get("/watch", ensureLoggedIn("/login"), (req, res) => {
-    res.sendFile("html/watch.html", client_root);
-});
-
-app.get("/admin", ensureLoggedIn("/login?admin"), (req, res) => {
-    res.sendFile("html/admin.html", client_root);
-});
-
-app.get("/login", (req, res) => {
-    res.sendFile("html/login.html", client_root)
-});
-
 app.use("/favicon.ico", (_, res) => {
     res.sendFile("favicon.ico", client_root);
 });
 
+app.get("/watch", ensure_login("user", "redirect"), (_, res) => {
+    res.sendFile("html/watch.html", client_root);
+});
+
+app.get("/admin", ensure_login("admin", "redirect"), (req, res) => {
+    res.sendFile("html/admin.html", client_root);
+});
+
+app.get("/login", (_, res) => {
+    res.sendFile("html/login.html", client_root)
+});
+
 app.post("/login",
-    (req, res, next) => {
-        /* Dynamically redirect error page */
-        const type = (req.body?.username === "admin") ? "admin" : "user";
-        
-        const callback = pass.authenticate("local", { failureRedirect: `/login?${type}_error`, failureMessage: "what" });
-
-        return callback(req, res, next);
-    },
-
+    pass.authenticate("local", { failureRedirect: `/login?error`, failureMessage: "what" }),
     (req, res) => {
         res.redirect((req.user?.user === "admin") ? "/admin" : "/watch");
     }
@@ -98,100 +129,90 @@ app.get("/logout", (req, res, next) => {
     })
 });
 
-app.post("/admin", upload.single("file"), (req, res, next) => {
-    const bound = res.writeHead.bind(res);
-    res.writeHead = (status_code, status_message?, headers?) => {
-        if (req.file) {
-            fs.unlinkSync(req.file.path);
-        }
-
-        return bound(status_code, status_message as any, headers as any);
-    };
-
-    next();
-}, async (req, res) => {
-    if (typeof(req.user) !== "object" || req.user.user !== "admin") {
-        return res.status(403).json({ success: false, message: "Not logged in" });
+app.get("/file/:uuid/:stream", (req, res) => {
+    if (!server.has_file || req.params.uuid !== server.current_uuid) {
+        return res.status(404).json({ success: false, message: "File not found"});
+    }
+    
+    const file = server.get_file(req.params.stream);
+    if (file === null) {
+        return res.status(404).json({ success: false, message: "File not found" });
     }
 
-    if (!req.file) {
-        return res.status(400).json({ success: false, message: "No file attached" });
+    return res.sendFile(file);
+});
+
+app.post("/admin", ensure_login("admin", "error"), upload.none(), async (req, res) => {
+    if (server.has_file()) {
+        return res.status(403).json({ success: false, message: "File already active" });
     }
 
-    if (!req.file.mimetype.startsWith("video/")) {
-        return res.status(415).json({ success: false, message: "Invalid MIME" });
+    return res.json(await server.allocate_file(req.body.name as string, parseInt(req.body.size)));
+});
+
+app.patch("/admin", ensure_login("admin", "error"), upload.single("blob"), async (req, res) => {
+    if (server.has_file()) {
+        return res.status(403).json({ success: false, message: "File already active" });
+    }
+
+    if (req.body.id !== server.uploading_file) {
+        return res.status(403).json({ success: false, message: "Invalid upload ID" });
     }
 
     try {
-        const file = await media.set_file(req.file.path, req.file.originalname);
-
-        return res.json({
-            success: true,
-            file: file
-        });
+        return res.json(await server.write_file(parseInt(req.body.index), req.file!.buffer));
     } catch (err: any) {
-        return res.status(415).json({ success: false, message: err.message});
+        log.error("Error writing data:", err.message);
+        return res.status(500).json({ success: false, message: "Error writing data" });
     }
 });
 
-app.get("/file/:uuid/:stream", (req, res) => {
-    if (req.params.uuid !== media.current_uuid) {
-        return res.status(404).send("File not found");
+app.put("/admin", ensure_login("admin", "error"), upload.none(), async (req, res) => {
+    if (server.has_file()) {
+        return res.status(403).json({ success: false, message: "File already active" });
     }
 
-    const stream = req.params.stream;
-
-    if (isNaN(parseInt(stream, 10)) || !media.has_file()) {
-        return res.status(404).send("Stream not found");
+    if (req.body.id !== server.uploading_file) {
+        return res.status(403).json({ success: false, message: "Invalid upload ID" });
     }
 
-    const file = media.streams.video[stream]
-              ?? media.streams.audio[stream]
-              ?? media.streams.subtitle[stream];
-
-    if (file === undefined) {
-        return res.status(404).send("Stream not found");
+    try {
+        return res.json(await server.set_file());
+    } catch (err: any) {
+        log.error("Error processing file:", err.message);
+        return res.status(500).json({ success: false, message: "Error processing file" });
     }
-
-    return res.sendFile(file.file);
 });
 
-app.ws("/", (ws, req, next) => {
-    /* Emulate connect-ensure-login */
-    if (!req.isAuthenticated || !req.isAuthenticated()) {
-        return ws.close();
+app.delete("/admin", ensure_login("admin", "error"), (req, res) => {
+    if (!server.has_file()) {
+        return res.status(403).json({ success: false, message: "No file active" });
     }
 
-    next();
-}, (ws, req) => {
-    ws.on("error", (data: string) => { console.error(`Error: ${data}`); });
-    ws.on("message", (data: string) => { console.log(`Message: ${data}`)});
+    server.unset_file();
+});
+
+app.ws("/ws_admin", ensure_login_ws("admin"), (ws, req) => {
+    ws.on("error", (data: string) => { log.error(`Error: ${data}`); });
+    ws.on("message", (data: string) => { log.log(`Message: ${data}`)});
+
+    server.set_admin(ws);
+
+    ws.on("close", () => server.remove_admin());
+
+    log.info("Admin connected", req.ip);
+});
+
+app.ws("/ws_watch", ensure_login_ws("user"), (ws, _) => {
+    ws.on("error", (data: string) => { log.error(`Error: ${data}`); });
     
-    if (media.has_file()) {
-        console.log("Sending new client file info");
+    const id = server.add_client(ws);
 
-        const mapping = (map: MediaFile.StreamMap) => {
-            const res: Ai.StreamMap = {};
+    ws.on("close", () => server.remove_client(id));
 
-            for (const [key, val] of Object.entries(map)) {
-                res[key] = val.mime;
-            }
-
-            return res;
-        };
-
-        const msg: Ai.NewFile = {
-            msg: Ai.MessageID.NewFile,
-            uuid: media.current_uuid,
-            video: mapping(media.streams.video),
-            audio: mapping(media.streams.audio),
-            subtitle: mapping(media.streams.subtitle),
-        };
-
-        ws.send(JSON.stringify(msg));
-    }
+    log.info("Client connected:", id);
 });
 
 app.listen(argv.port, () => {
-    console.log(`Server started on port ${argv.port}`);
+    log.info(`Server started on port ${argv.port}`);
 });

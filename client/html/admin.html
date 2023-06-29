@@ -4,29 +4,29 @@
         <title>AiSync - Admin</title>
     </head>
     <body data-bs-theme="dark">
-        <div class="container d-flex justify-content-row">
+        <admin-panel class="container d-flex justify-content-row">
             <div class="container">
                 <div class="pt-2 px-2" id="info-box">
                     <table class="table table-striped">
                         <tr>
                             <td>Clients</td>
-                            <td>0</td>
+                            <td id="client-count">0</td>
                         </tr>
                         <tr>
                             <td>File</td>
-                            <td>(none)</td>
+                            <td id="filename">(none)</td>
                         </tr>
                         <tr>
                             <td>MIME</td>
-                            <td>(none)</td>
+                            <td id="file-mime">(none)</td>
                         </tr>
                         <tr>
                             <td>Duration</td>
-                            <td>--:--</td>
+                            <td id="duration">--:--</td>
                         </tr>
                         <tr>
                             <td>Position</td>
-                            <td>--:--</td>
+                            <td id="position">--:--</td>
                         </tr>
                     </table>
                 </div>
@@ -47,10 +47,8 @@
                 <alert-panel id="alert" class="m-2 d-none"></alert-panel>
             </div>
             <div class="container mt-2">
-                <ul class="list-group">
-                    <li class="list-group-item">User 1</li>
-                </ul>
+                <client-list id="client-list"></client-list>
             </div>
-        </div>
+        </admin-panel>
     </body>
 </html>

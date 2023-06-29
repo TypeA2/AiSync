@@ -8,6 +8,7 @@ import * as crypto from "crypto";
 import "express-ws";
 
 declare global {
+    // eslint-disable-next-line @typescript-eslint/no-namespace
     namespace Express {
         interface User {
             user: "user" | "admin";
@@ -23,42 +24,25 @@ export interface AppOptions {
     max_session_age: number; /* Maximimum session cookie age */
 }
 
-interface App {
+export interface App {
     app: express_ws.Application;
     ws_inst: express_ws.Instance;
 
     pass: passport.Authenticator;
 }
 
-export function make_app(options: AppOptions): App {
+export default function make_app(options: AppOptions): App {
     const ws_inst = express_ws(express());
     const app = ws_inst.app;
 
     const pass = new passport.Authenticator();
-    pass.use(new passport_local.Strategy((username, password, done) => {
-        switch (username) {
-            case "user": {
-                if (process.env.AISYNC_USER_PASSWORD === password) {
-                    done(null, { user: "user" });
-                } else {
-                    done(null, false, { message: "Incorrect user password" });
-                }
-                break;
-            }
-    
-            case "admin": {
-                if (process.env.AISYNC_ADMIN_PASSWORD == password) {
-                    done(null, { user: "admin" });
-                } else {
-                    done(null, false, { message: "Incorrect admin password" });
-                }
-                break;
-            }
-    
-            default: {
-                done(null, false, { message: "Unknown user" });
-                break;
-            }
+    pass.use(new passport_local.Strategy((_username, password, done) => {
+        if (password === process.env.AISYNC_ADMIN_PASSWORD) {
+            done(null, { user: "admin" });
+        } else if (password === process.env.AISYNC_USER_PASSWORD) {
+            done(null, { user: "user" });
+        } else {
+            done(null, false, { message: "Invalid password" });
         }
     }));
 

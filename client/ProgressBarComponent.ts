@@ -28,7 +28,7 @@ class ProgressBarComponent extends HTMLElement {
     }
 
     public set_progress(ratio: number) {
-        this.inner.style.width = (ratio * 100).toString() + "%";
+        this.inner.style.width = Math.round(ratio * 100).toString() + "%";
         this.inner.innerHTML = Math.round(ratio * 100) + "%";
     }
 
